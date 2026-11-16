@@ -1,0 +1,20 @@
+import {readFileSync,writeFileSync,existsSync} from 'node:fs';
+import {randomBytes} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+const path='/etc/tmy-phase2';
+const environment:Record<string,string>={};
+for(const line of readFileSync(`${path}/server.env`,'utf8').split('\n')){const i=line.indexOf('=');if(i>0)environment[line.slice(0,i)]=line.slice(i+1);}
+const handoff:unknown=JSON.parse(readFileSync(`${path}/handoff.json`,'utf8'));
+if(!handoff||typeof handoff!=='object')throw new Error('Invalid handoff');
+const credentials=handoff as Record<string,unknown>;
+const password=typeof credentials.app_initial_password==='string'?credentials.app_initial_password:randomBytes(24).toString('base64url');
+credentials.app_username='admin';credentials.app_initial_password=password;
+writeFileSync(`${path}/handoff.json`,JSON.stringify(credentials,null,2),{mode:0o600});
+const cwd='/srv/tmy-phase2/server';
+const env={...process.env,...environment,INITIAL_ADMIN_PASSWORD:password};
+for(const entry of ['migrate','seed'])execFileSync('/usr/bin/node',[`dist/${entry}.js`],{cwd,env,stdio:'inherit'});
+const unit='/etc/systemd/system/tmy-api.service';
+if(existsSync(unit))throw new Error('Existing API service requires explicit upgrade path');
+writeFileSync(unit,`[Unit]\nDescription=TMY Phase2 API\nAfter=network.target mysqld.service\nRequires=mysqld.service\n[Service]\nUser=tmy-app\nGroup=tmy-app\nWorkingDirectory=${cwd}\nEnvironmentFile=${path}/server.env\nEnvironment=NODE_OPTIONS=--max-old-space-size=384\nExecStart=/usr/bin/node dist/main.js\nRestart=on-failure\nRestartSec=5\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nReadWritePaths=${cwd}\n[Install]\nWantedBy=multi-user.target\n`);
+execFileSync('systemctl',['daemon-reload']);execFileSync('systemctl',['enable','--now','tmy-api']);
+process.stdout.write('API started; generated initial account password stored only in protected handoff.\n');

@@ -1,0 +1,96 @@
+{
+  "name": "tmy-tri-manager",
+  "version": "2.1.31",
+  "private": true,
+  "type": "module",
+  "main": "dist-electron/electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5176\" \"wait-on tcp:5176 && tsc -p tsconfig.electron.json && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5176 electron .\"",
+    "build": "npm run typecheck && vite build && tsc -p tsconfig.electron.json",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "start": "electron .",
+    "package:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "package:mac": "npm run build && electron-builder --mac",
+    "format": "prettier --write src electron tests *.json *.ts *.html",
+    "format:check": "prettier --check src electron tests *.json *.ts *.html",
+    "test:ui": "npm run build && node --import tsx tests/smoke.ts",
+    "test:ui:public": "npm run build && node --import tsx tests/public-smoke.ts"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.6.1",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "@tiptap/core": "^3.32.1",
+    "@tiptap/extension-image": "^3.32.1",
+    "@tiptap/extension-link": "^3.32.1",
+    "@tiptap/extension-placeholder": "^3.32.1",
+    "@tiptap/extension-table": "^3.32.1",
+    "@tiptap/extension-underline": "^3.32.1",
+    "@tiptap/pm": "^3.32.1",
+    "@tiptap/react": "^3.32.1",
+    "@tiptap/starter-kit": "^3.32.1",
+    "antd": "^5.27.0",
+    "axios": "^1.12.0",
+    "decimal.js": "^10.6.0",
+    "electron-updater": "^6.8.9",
+    "exceljs": "^4.4.0",
+    "pinyin-pro": "^3.29.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-rnd": "10.5.3",
+    "rxjs": "^7.8.2",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.0",
+    "cross-env": "^10.0.0",
+    "electron": "^39.0.0",
+    "electron-builder": "26.15.3",
+    "fake-indexeddb": "^6.2.5",
+    "playwright-core": "^1.63.0",
+    "prettier": "^3.9.8",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.2.0",
+    "wait-on": "^9.0.0"
+  },
+  "build": {
+    "appId": "com.tmytri.manager",
+    "productName": "天美意趣趣特管理",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "icon": "build/icon.png",
+      "target": "dmg"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": "nsis",
+      "artifactName": "TMY-TRI-Manager-${version}-${arch}-Setup.${ext}",
+      "publish": [
+        {
+          "provider": "generic",
+          "url": "https://114.215.185.184/updates/windows/stable/"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh",
+      "runAfterFinish": true
+    }
+  }
+}

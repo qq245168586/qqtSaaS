@@ -1,0 +1,17 @@
+{
+  "name": "tmy-phase2-workspace",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "tsx --test tests/*.test.ts",
+    "git-service": "node dist/tools/git-service.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "~5.9.3"
+  }
+}
