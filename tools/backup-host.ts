@@ -1,9 +1,8 @@
 /** Root-only, standalone host snapshot. Never runs when imported. */
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { constants, createReadStream } from "node:fs";
+import { createReadStream } from "node:fs";
 import {
-  access,
   chmod,
   link,
   lstat,
@@ -23,15 +22,13 @@ interface Options {
   database: string;
   mysqlDefaults?: string;
   attachments: string;
-  repositories: string;
 }
 interface CommandOptions {
   outputFd?: number;
   capture?: boolean;
   timeoutMs?: number;
 }
-const services = ["tmy-api.service", "tmy-git.service"] as const;
-const expectedRepos = ["phase2.git", "server.git", "desktop.git", "web.git"];
+const services = ["tmy-api.service"] as const;
 const children = new Set<ChildProcess>();
 let abortRequested = false;
 const stopRequested = () => {
@@ -158,19 +155,10 @@ export async function backupHost(
       throw error;
   }
   const attachments = await sourceDirectory(options.attachments);
-  const repositories = await sourceDirectory(options.repositories);
-  if (
-    basename(attachments) === basename(repositories) ||
-    [basename(attachments), basename(repositories)].some((name) =>
-      ["database.sql", "manifest.json"].includes(name),
-    )
-  )
+  if (["database.sql", "manifest.json"].includes(basename(attachments)))
     throw new Error("归档源目录名称冲突");
-  for (const source of [attachments, repositories])
-    if (outputDirectory === source || outputDirectory.startsWith(source + sep))
-      throw new Error("备份目标不能位于被备份目录内");
-  for (const name of expectedRepos)
-    await access(join(repositories, name, "HEAD"), constants.R_OK);
+  if (outputDirectory === attachments || outputDirectory.startsWith(attachments + sep))
+    throw new Error("备份目标不能位于被备份目录内");
   if (options.mysqlDefaults) {
     const info = await lstat(options.mysqlDefaults);
     if (
@@ -181,7 +169,7 @@ export async function backupHost(
     )
       throw new Error("MySQL凭据文件必须root拥有且权限0600，不能为软链接");
   }
-  for (const program of ["systemctl", "mysqldump", "tar", "git"])
+  for (const program of ["systemctl", "mysqldump", "tar"])
     await command(program, ["--version"]);
   const states = new Map<string, string>();
   for (const service of services) {
@@ -261,33 +249,18 @@ export async function backupHost(
       await dump.close();
     }
     if ((await stat(dumpPath)).size === 0) throw new Error("MySQL备份为空");
-    for (const name of expectedRepos)
-      await command(
-        "git",
-        [
-          "-c",
-          `safe.directory=${join(repositories, name)}`,
-          "--git-dir",
-          join(repositories, name),
-          "fsck",
-          "--full",
-          "--no-reflogs",
-        ],
-        { timeoutMs: 600000 },
-      );
     await writeFile(
       join(work, "manifest.json"),
       JSON.stringify(
         {
-          version: 1,
+          version: 2,
           created_at: new Date().toISOString(),
           database: options.database,
           attachments_source: attachments,
-          repositories_source: repositories,
-          repositories: expectedRepos,
+          source_repository: "git@github.com:qq245168586/qqtSaaS.git",
           services_before: Object.fromEntries(states),
           consistency:
-            "API and Git service stopped during dump and archive; no concurrent direct SQL/import jobs permitted",
+            "API stopped during database and attachment archive; source code hosted on GitHub; no concurrent direct SQL/import jobs permitted",
         },
         null,
         2,
@@ -309,9 +282,6 @@ export async function backupHost(
           "--directory",
           dirname(attachments),
           basename(attachments),
-          "--directory",
-          dirname(repositories),
-          basename(repositories),
         ],
         { outputFd: archive.fd, timeoutMs: 1800000 },
       );
@@ -370,7 +340,6 @@ if (process.argv[1] && /backup-host\.(?:ts|js)$/.test(process.argv[1])) {
         type: "string",
         default: "/var/lib/tmy-phase2/attachments",
       },
-      repositories: { type: "string", default: "/srv/tmy-phase2/git" },
     },
   });
   if (!values.output) {
@@ -386,7 +355,6 @@ if (process.argv[1] && /backup-host\.(?:ts|js)$/.test(process.argv[1])) {
         ? { mysqlDefaults: values["mysql-defaults"] }
         : {}),
       attachments: values.attachments ?? "/var/lib/tmy-phase2/attachments",
-      repositories: values.repositories ?? "/srv/tmy-phase2/git",
     })
       .then((result) => console.log(JSON.stringify(result)))
       .catch((error: unknown) => {

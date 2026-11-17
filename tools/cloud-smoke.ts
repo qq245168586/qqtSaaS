@@ -4,7 +4,7 @@ import {randomBytes} from 'node:crypto';
 type Row=Record<string,unknown>;
 const path=process.env.HANDOFF_PATH??'.local-secrets/cloud-handoff.json';
 const handoff=JSON.parse(readFileSync(path,'utf8')) as Row;
-const base=String(handoff.git_url).replace('/git/','/api');
+const base=String(process.env.API_BASE_URL ?? handoff.api_url ?? 'https://114.215.185.184/api');
 let token='';
 async function request(method:string,url:string,body?:unknown,expected=200,auth=token):Promise<Row>{
  const response=await fetch(base+url,{method,headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${auth}`}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
