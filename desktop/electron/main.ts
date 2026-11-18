@@ -1,3 +1,4 @@
+import { trustedMediaUrl } from './media-permission.js';
 import { cachedImage, imageType, invalidateImage } from './image-cache.js';
 import { submitPrintWithCompatibility } from './print-job.js';
 import { WindowsUpdateManager } from './windows-updater.js';
@@ -518,18 +519,8 @@ async function start() {
       sandbox: true,
     },
   });
-  const trustedMediaOrigin = (url: string) => {
-    if (!app.isPackaged && url === 'http://127.0.0.1:5176') return true;
-    try {
-      const parsed = new URL(url);
-      return (
-        parsed.protocol === 'file:' &&
-        decodeURIComponent(parsed.pathname) === path.join(here, '../../dist/index.html')
-      );
-    } catch {
-      return false;
-    }
-  };
+  const trustedMediaOrigin = (url: string) =>
+    trustedMediaUrl(url, path.join(here, '../../dist/index.html'), !app.isPackaged);
   window.webContents.session.setPermissionCheckHandler(
     (contents, permission, origin, details) =>
       contents === window?.webContents &&

@@ -1373,7 +1373,7 @@ function Ai({ online }: { online: boolean }) {
           aria-label="微信群订单文本"
           rows={8}
           maxLength={50000}
-          placeholder="粘贴订单、客户需求或生产安排…"
+          placeholder="例如：明天下午3点送一个6寸抹茶巴斯克蛋糕，送到南山区某某大厦一楼，收货人王女士。备注：少糖，附生日蜡烛，提前半小时联系。"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />

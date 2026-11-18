@@ -134,7 +134,7 @@ export function GlobalAssistant({
               disabled={busy}
               maxLength={30000}
               autoSize={{ minRows: 5, maxRows: 12 }}
-              placeholder="例如：明天一乐食堂要20个三明治和13个布丁；给御牛纪开送货单，10月12日意面10斤，每斤22元；张景美明天9点上班，加班1小时；添加待办：明天9点开始整理采购清单，后天下午5点前完成。"
+              placeholder="例如：明天下午3点送一个6寸抹茶巴斯克蛋糕，送到南山区某某大厦一楼，收货人王女士。备注：少糖，附生日蜡烛，提前半小时联系。"
               onChange={(event) => update({ text: event.target.value })}
             />
             <div className="assistant-compose-footer">
