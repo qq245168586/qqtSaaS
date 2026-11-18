@@ -1,3 +1,5 @@
+import { VoiceTodos } from "./voice/VoiceTodos";
+import { VoiceInput } from "./voice/VoiceInput";
 import {
   useCallback,
   useEffect,
@@ -1356,9 +1358,17 @@ function Ai({ online }: { online: boolean }) {
   return (
     <>
       <span className="eyebrow">SMART INBOX</span>
-      <h1>AI 订单录入</h1>
+      <h1>AI 助手</h1>
+      <VoiceTodos />
+      <h2>零售订单</h2>
       <p className="muted">粘贴群消息，逐项确认后安排给同事。</p>
       <Card>
+        <VoiceInput
+          disabled={busy || !online}
+          onText={(value) =>
+            setText((current) => [current, value].filter(Boolean).join("\n"))
+          }
+        />
         <textarea
           aria-label="微信群订单文本"
           rows={8}

@@ -1,3 +1,4 @@
+import { VoiceDocument } from './voice/VoiceDocument';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
@@ -991,6 +992,33 @@ export function Confluence() {
                   <div className="confluence-save-state">
                     {creating ? '新页面 · 保存后加入左侧目录' : '编辑模式 · 保存后生成新版本'}
                   </div>
+                  <VoiceDocument
+                    key={detail?.id ?? 'new'}
+                    onInsert={(draft) => {
+                      if (!title.trim()) setTitle(draft.title);
+                      const additions: JSONContent[] = draft.sections.flatMap((section) => [
+                        ...(section.heading
+                          ? [
+                              {
+                                type: 'heading',
+                                attrs: { level: 2 },
+                                content: [{ type: 'text', text: section.heading }],
+                              },
+                            ]
+                          : []),
+                        ...section.text
+                          .split('\n')
+                          .map((text) => ({
+                            type: 'paragraph',
+                            ...(text ? { content: [{ type: 'text', text }] } : {}),
+                          })),
+                      ]);
+                      changeDocument({
+                        type: 'doc',
+                        content: [...(documentContent.content ?? []), ...additions],
+                      });
+                    }}
+                  />
                   <RichWikiEditor
                     key={`${detail?.id ?? 'new'}:edit`}
                     content={documentContent}

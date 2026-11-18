@@ -5,6 +5,7 @@ declare global {
       invalidateImage: (id: string) => Promise<unknown>;
       image: (value: { taskId: string; id: string }) => Promise<unknown>;
       wikiImage: (id: string) => Promise<unknown>;
+      microphoneSettings: () => Promise<unknown>;
       request: (value: unknown) => Promise<unknown>;
       complianceReminders: () => Promise<unknown>;
       getServer: () => Promise<unknown>;

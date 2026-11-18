@@ -25,7 +25,13 @@ export function enforcePublicAccess(user: User, path: string): void {
 }
 export function enforceWikiAccess(claim: unknown, path: string): void {
   if (claim === undefined || claim === false) return;
-  if (claim !== true || !path.toLowerCase().replace(/\/+$/, '').startsWith('/api/wiki/'))
+  const normalized = path.toLowerCase().replace(/\/+$/, '');
+  const voiceAllowed = [
+    '/api/ai/voice/status',
+    '/api/ai/voice/transcribe',
+    '/api/ai/voice/document',
+  ].includes(normalized);
+  if (claim !== true || (!normalized.startsWith('/api/wiki/') && !voiceAllowed))
     throw new ForbiddenException('Confluence 公开会话只能访问知识库');
 }
 export function createPublicSession(

@@ -1,3 +1,4 @@
+import { VoiceInput } from './voice/VoiceInput';
 import { assistantFailure, type AssistantFailure } from './assistant-errors';
 import { TodoEditor } from './Todos';
 import { useEffect, useRef, useState } from 'react';
@@ -119,6 +120,14 @@ export function GlobalAssistant({
                 onChange={(module: AssistantModule) => update({ module })}
               />
             </div>
+            {open && (
+              <VoiceInput
+                disabled={busy}
+                onText={(text) =>
+                  update({ text: [getState().assistant.text, text].filter(Boolean).join('\n') })
+                }
+              />
+            )}
             <Input.TextArea
               aria-label="全局AI输入"
               value={assistant.text}

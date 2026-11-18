@@ -1,3 +1,4 @@
+import { VoiceDocument } from "../src/voice/VoiceDocument";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { z } from "zod";
@@ -1085,6 +1086,42 @@ export function WikiApp() {
                       新建目录
                     </button>
                   </div>
+                  <VoiceDocument
+                    key={detail?.id ?? "new"}
+                    onInsert={(draft) => {
+                      if (!title.trim()) setTitle(draft.title);
+                      const additions: JSONContent[] = draft.sections.flatMap(
+                        (section) => [
+                          ...(section.heading
+                            ? [
+                                {
+                                  type: "heading",
+                                  attrs: { level: 2 },
+                                  content: [
+                                    { type: "text", text: section.heading },
+                                  ],
+                                },
+                              ]
+                            : []),
+                          ...section.text
+                            .split("\n")
+                            .map((text) => ({
+                              type: "paragraph",
+                              ...(text
+                                ? { content: [{ type: "text", text }] }
+                                : {}),
+                            })),
+                        ],
+                      );
+                      changeDocument({
+                        type: "doc",
+                        content: [
+                          ...(documentContent.content ?? []),
+                          ...additions,
+                        ],
+                      });
+                    }}
+                  />
                   <RichWikiEditor
                     key={`${detail?.id ?? "new"}:edit`}
                     content={documentContent}

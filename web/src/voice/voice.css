@@ -1,0 +1,78 @@
+.voice-input,
+.voice-document {
+  margin: 12px 0;
+  padding: 10px 0;
+  border-top: 1px solid #dce3de;
+  border-bottom: 1px solid #dce3de;
+  color: #243b32;
+  font-size: 14px;
+}
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+.voice-input button,
+.voice-document button,
+.voice-document select {
+  border: 0;
+  border-bottom: 1px solid #8eaaa0;
+  border-radius: 0;
+  background: transparent;
+  color: #28614f;
+  padding: 5px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.voice-input button:disabled,
+.voice-document button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.voice-file {
+  cursor: pointer;
+  text-decoration: underline;
+}
+.voice-file input {
+  display: none;
+}
+.voice-input small {
+  color: #68786f;
+  display: block;
+}
+.voice-error {
+  color: #b83232;
+}
+.voice-input audio {
+  height: 32px;
+  max-width: 100%;
+}
+.voice-document textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-bottom: 1px solid #8eaaa0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+  font: inherit;
+  min-height: 90px;
+}
+.voice-document summary {
+  cursor: pointer;
+  color: #28614f;
+}
+.voice-document-preview {
+  white-space: pre-wrap;
+  padding: 8px 0;
+  max-height: 45vh;
+  overflow: auto;
+}
+.voice-document-preview h4 {
+  margin: 8px 0;
+}
+.voice-document-preview p {
+  margin: 4px 0;
+}

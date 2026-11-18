@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('desktop', {
   invalidateImage: (id: string) => invoke('image:invalidate', id),
   image: (value: unknown) => invoke('image:read', value),
   wikiImage: (id: string) => invoke('wiki:image', id),
+  microphoneSettings: () => invoke('voice:settings'),
   request: (value: unknown) => invoke('api:request', value),
   complianceReminders: () => invoke('compliance:reminders'),
   getServer: () => invoke('connection:get'),

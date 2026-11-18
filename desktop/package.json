@@ -71,7 +71,10 @@
     ],
     "mac": {
       "icon": "build/icon.png",
-      "target": "dmg"
+      "target": "dmg",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "用于AI助手语音录入和Confluence口述文档，仅在您点击录音时使用麦克风。"
+      }
     },
     "win": {
       "icon": "build/icon.png",

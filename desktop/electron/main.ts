@@ -207,6 +207,14 @@ async function start() {
     }
     return null;
   });
+  handle('voice:settings', async () => {
+    if (process.platform === 'win32') await shell.openExternal('ms-settings:privacy-microphone');
+    else if (process.platform === 'darwin')
+      await shell.openExternal(
+        'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+      );
+    return null;
+  });
   handle('api:request', async (value) => {
     const input = z
       .object({
@@ -221,7 +229,7 @@ async function start() {
             z.object({
               field: z.string().max(60),
               name: z.string().max(255),
-              type: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+              type: z.enum(['image/png', 'image/jpeg', 'image/webp', 'audio/wav']),
               bytes: z.instanceof(Uint8Array),
             }),
           )
@@ -251,7 +259,15 @@ async function start() {
       const data = new FormData();
       for (const [key, text] of input.fields ?? []) data.append(key, text);
       for (const file of input.files) {
-        if (file.bytes.byteLength > 10 * 1024 * 1024) throw new Error('图片超过10MiB');
+        if (file.bytes.byteLength > 10 * 1024 * 1024) throw new Error('文件超过10MiB');
+        if (
+          file.type === 'audio/wav' &&
+          (input.path !== '/ai/voice/transcribe' ||
+            input.method !== 'POST' ||
+            input.files.length !== 1 ||
+            file.field !== 'file')
+        )
+          throw new Error('音频只能上传到语音识别接口');
         data.append(
           file.field,
           new Blob([new Uint8Array(file.bytes)], { type: file.type }),
@@ -502,6 +518,42 @@ async function start() {
       sandbox: true,
     },
   });
+  const trustedMediaOrigin = (url: string) => {
+    if (!app.isPackaged && url === 'http://127.0.0.1:5176') return true;
+    try {
+      const parsed = new URL(url);
+      return (
+        parsed.protocol === 'file:' &&
+        decodeURIComponent(parsed.pathname) === path.join(here, '../../dist/index.html')
+      );
+    } catch {
+      return false;
+    }
+  };
+  window.webContents.session.setPermissionCheckHandler(
+    (contents, permission, origin, details) =>
+      contents === window?.webContents &&
+      permission === 'media' &&
+      details.mediaType === 'audio' &&
+      (trustedMediaOrigin(origin) || trustedMediaOrigin(details.requestingUrl ?? '')),
+  );
+  window.webContents.session.setPermissionRequestHandler(
+    (contents, permission, callback, details) => {
+      callback(
+        contents === window?.webContents &&
+          permission === 'media' &&
+          details.isMainFrame &&
+          trustedMediaOrigin(
+            new URL(contents.getURL()).protocol === 'file:'
+              ? contents.getURL()
+              : new URL(contents.getURL()).origin,
+          ) &&
+          'mediaTypes' in details &&
+          details.mediaTypes?.length === 1 &&
+          details.mediaTypes[0] === 'audio',
+      );
+    },
+  );
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   const dev = process.env.VITE_DEV_SERVER_URL;

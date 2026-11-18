@@ -1,3 +1,4 @@
+import { VoiceController } from './voice';
 import { AiRequestError } from './ai-errors';
 import 'reflect-metadata';
 import { TodosController } from './todos';
@@ -91,6 +92,7 @@ class HealthController {
 @Module({
   controllers: [
     HealthController,
+    VoiceController,
     TodosController,
     AuthController,
     ExportController,

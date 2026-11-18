@@ -126,6 +126,11 @@ export function RichWikiEditor({
   });
 
   useEffect(() => editor?.setEditable(editable), [editable, editor]);
+  useEffect(() => {
+    if (editor && JSON.stringify(editor.getJSON()) !== JSON.stringify(content))
+      editor.commands.setContent(content, { emitUpdate: false });
+  }, [editor, content]);
+
   if (!editor) return null;
 
   const link = () => {
