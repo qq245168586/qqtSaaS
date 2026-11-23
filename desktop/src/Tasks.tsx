@@ -1,4 +1,5 @@
 import { retailFlavor } from './retail-flavor';
+import { RetailColumnFilter, readRetailFilters, type RetailFilterRule } from './RetailColumnFilter';
 import { OrderChannelField } from './OrderChannelField';
 import { CachedTaskImage } from './CachedTaskImage';
 import { CompanyField } from './CompanySelect';
@@ -820,6 +821,14 @@ export function Tasks({
   const setPage = (page: number) => dispatch({ type: 'page', page });
   const setFilter = (update: (current: Record<string, string>) => Record<string, string>) =>
     dispatch({ type: 'filters', filters: update(getState().taskFilters) });
+  const columnRules = readRetailFilters(filter.column_filters);
+  const applyColumnRules = (rules: RetailFilterRule[]) => {
+    setPage(1);
+    setFilter((current) => ({
+      ...current,
+      column_filters: rules.length ? JSON.stringify(rules) : '',
+    }));
+  };
   const creationRequests = useRef(new Map<string, string>());
   const [linked, setLinked] = useState<z.infer<typeof deliveryLinkSchema>[] | null>(null);
   useEffect(() => {
@@ -940,7 +949,8 @@ export function Tasks({
       const updated = await api('PATCH', `/tasks/${task.id}/entry-progress`, taskSchema, {
         entry_progress,
       });
-      setTasks(tasks.map((item) => (item.id === updated.id ? updated : item)));
+      setTasks(getState().tasks.map((item) => (item.id === updated.id ? updated : item)));
+      if (columnRules.some((rule) => rule.field === 'entry_progress')) reload();
       void message.success(entry_progress === 'entered' ? '已标记为已录入' : '已标记为未录入');
     } catch (error) {
       void message.error(errorText(error));
@@ -1224,7 +1234,7 @@ export function Tasks({
             width: 92,
             render: (value: Task['status'], task) => (
               <Select
-                className={`task-status-select task-status-${value}`}
+                className={`task-status-select task-status-${value} task-entry-${task.entry_progress === 'entered' ? 'entered' : 'not-entered'}`}
                 variant="borderless"
                 size="small"
                 suffixIcon={null}
@@ -1290,7 +1300,15 @@ export function Tasks({
             ),
           },
           {
-            title: '接单人',
+            title: (
+              <RetailColumnFilter
+                field="order_taker_employee_id"
+                title="接单人"
+                rules={columnRules}
+                choices={options(catalog.employees ?? [])}
+                onApply={applyColumnRules}
+              />
+            ),
             width: 126,
             render: (_, task) =>
               canManage ? (
@@ -1326,7 +1344,14 @@ export function Tasks({
               ),
           },
           {
-            title: '金额',
+            title: (
+              <RetailColumnFilter
+                field="order_amount"
+                title="金额"
+                rules={columnRules}
+                onApply={applyColumnRules}
+              />
+            ),
             dataIndex: 'order_amount',
             width: 150,
             render: (value: string | number | null, task) => (
@@ -1356,7 +1381,15 @@ export function Tasks({
             ),
           },
           {
-            title: '负责人',
+            title: (
+              <RetailColumnFilter
+                field="assignee_employee_id"
+                title="负责人"
+                rules={columnRules}
+                choices={options(catalog.employees ?? [])}
+                onApply={applyColumnRules}
+              />
+            ),
             dataIndex: 'assignee_name',
             width: 92,
             render: (value) => value || '—',
@@ -1369,7 +1402,14 @@ export function Tasks({
               ({ low: '低', normal: '普通', high: '高', urgent: '加急' })[String(value) as 'low'],
           },
           {
-            title: '金蝶录入',
+            title: (
+              <RetailColumnFilter
+                field="entry_progress"
+                title="金蝶录入"
+                rules={columnRules}
+                onApply={applyColumnRules}
+              />
+            ),
             dataIndex: 'entry_progress',
             width: 118,
             render: (value: Task['entry_progress'], task) =>

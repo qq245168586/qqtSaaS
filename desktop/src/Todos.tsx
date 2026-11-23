@@ -1,17 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Badge,
-  Button,
-  Checkbox,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  message,
-} from 'antd';
+import { Alert, Badge, Button, Form, Input, Modal, Select, Space, Table, message } from 'antd';
 import { z } from 'zod';
 import { api, errorText } from './api';
 const todoSchema = z.object({
@@ -93,34 +81,37 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
     [error, setError] = useState('');
   const [editing, setEditing] = useState<Todo | 'new' | null>(null);
   const request = useRef(0);
-  const load = useCallback(async () => {
-    const seq = ++request.current;
-    setLoading(true);
-    try {
-      const q = new URLSearchParams({
-        page: String(page),
-        page_size: '20',
-        status,
-        keyword,
-        recurrence,
-      });
-      const r = await api('GET', `/todos?${q}`, listSchema);
-      if (seq !== request.current) return;
-      if (page > 1 && !r.items.length) {
-        setPage((p) => p - 1);
-        return;
+  const load = useCallback(
+    async (showLoading = false) => {
+      const seq = ++request.current;
+      if (showLoading) setLoading(true);
+      try {
+        const q = new URLSearchParams({
+          page: String(page),
+          page_size: '20',
+          status,
+          keyword,
+          recurrence,
+        });
+        const r = await api('GET', `/todos?${q}`, listSchema);
+        if (seq !== request.current) return;
+        if (page > 1 && !r.items.length) {
+          setPage((p) => p - 1);
+          return;
+        }
+        setItems(r.items);
+        setTotal(r.total);
+        setError('');
+      } catch (e) {
+        if (seq === request.current) setError(errorText(e));
+      } finally {
+        if (seq === request.current) setLoading(false);
       }
-      setItems(r.items);
-      setTotal(r.total);
-      setError('');
-    } catch (e) {
-      if (seq === request.current) setError(errorText(e));
-    } finally {
-      if (seq === request.current) setLoading(false);
-    }
-  }, [page, status, keyword, recurrence]);
+    },
+    [page, status, keyword, recurrence],
+  );
   useEffect(() => {
-    void load();
+    void load(true);
     const timer = setInterval(() => void load(), 30_000);
     const focus = () => void load();
     window.addEventListener('focus', focus);
@@ -136,6 +127,7 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
     setEditing(value);
   }
   async function setComplete(item: Todo, checked: boolean) {
+    if (busy || (item.progress === 100) === checked) return;
     setBusy(true);
     try {
       await api('PUT', `/todos/${item.id}`, todoSchema, {
@@ -148,7 +140,6 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
         version: item.version,
       });
       changed();
-      await load();
     } catch (e) {
       void message.error(errorText(e));
     } finally {
@@ -161,7 +152,6 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
       await api('POST', `/todos/${item.id}/restart`, todoSchema, { version: item.version });
       changed();
       void message.success('已重新开始，截止时间已按原时长顺延');
-      await load();
     } catch (e) {
       void message.error(errorText(e));
     } finally {
@@ -176,7 +166,6 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
       await api('DELETE', `/todos/${deleting.id}`, z.null(), { version: deleting.version });
       setDeleting(null);
       changed();
-      await load();
     } catch (e) {
       void message.error(errorText(e));
     } finally {
@@ -237,12 +226,11 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
         <Button
           onClick={() => {
             changed();
-            void load();
           }}
         >
           刷新
         </Button>
-        <span className="secondary">共 {total} 项 · 时间为北京时间</span>
+        <span className="todo-count">共 {total} 项 · 时间为北京时间</span>
       </Space>
       {(error || reminderError) && (
         <Alert type="error" showIcon message={error || `待办提醒更新失败：${reminderError}`} />
@@ -263,6 +251,13 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
         tableLayout="fixed"
         columns={[
           {
+            title: '序号',
+            width: 48,
+            render: (_: unknown, _r: Todo, index: number) => (
+              <span className="todo-index">{(page - 1) * 20 + index + 1}</span>
+            ),
+          },
+          {
             title: '事项',
             dataIndex: 'title',
             render: (_, r) => (
@@ -271,7 +266,7 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
                   <strong>{r.title}</strong>
                 </Badge>
                 {r.overdue && <span className="todo-overdue">已逾期</span>}
-                {r.note && <div className="secondary todo-note">{r.note}</div>}
+                {r.note && <div className="todo-note">{r.note}</div>}
               </div>
             ),
           },
@@ -299,14 +294,19 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
             title: '状态',
             width: 110,
             render: (_, r) => (
-              <Checkbox
-                checked={r.progress === 100}
+              <Select
+                className="todo-status"
+                classNames={{ popup: { root: 'todo-status-options' } }}
+                variant="borderless"
+                value={r.progress === 100 ? 100 : 0}
                 disabled={!canManage || busy}
-                aria-label={`完成待办：${r.title}`}
-                onChange={(e) => void setComplete(r, e.target.checked)}
-              >
-                {r.progress === 100 ? '已完成' : '未完成'}
-              </Checkbox>
+                aria-label={`待办状态：${r.title}`}
+                onChange={(value) => void setComplete(r, value === 100)}
+                options={[
+                  { value: 0, label: '未完成' },
+                  { value: 100, label: '已完成' },
+                ]}
+              />
             ),
           },
           ...(canManage
@@ -355,7 +355,6 @@ export function Todos({ canManage, reminderError }: { canManage: boolean; remind
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
-            void load();
           }}
         />
       )}

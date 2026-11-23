@@ -525,8 +525,87 @@ h1 {
 .task-status-canceled i {
   background: #c9cfcb;
 }
+.task-status-select.task-entry-not-entered .ant-select-selection-item i {
+  background: #cf3434;
+}
+.task-status-select.task-entry-entered .ant-select-selection-item i {
+  background: #245d41;
+}
 .task-progress-select {
   width: 94px;
+}
+.retail-filter-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+.retail-filter-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: #8a9690;
+  cursor: pointer;
+}
+.retail-filter-trigger:hover,
+.retail-filter-trigger.is-active {
+  color: #245d41;
+  background: #e7eee9;
+}
+.retail-filter-trigger:focus-visible {
+  outline: 1px solid #245d41;
+}
+.retail-filter-panel {
+  width: 390px;
+  max-width: calc(100vw - 60px);
+}
+.retail-filter-panel p {
+  margin: 5px 0 12px;
+  color: #78867f;
+  font-size: 12px;
+}
+.retail-filter-rule-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.retail-filter-rule-inputs > .ant-select:first-child {
+  width: 76px;
+  flex-shrink: 0;
+}
+.retail-filter-rule-inputs > .ant-select:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.retail-filter-and {
+  display: block;
+  margin: 6px 0;
+  color: #78867f;
+  font-size: 12px;
+}
+.retail-filter-amount-range {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.retail-filter-amount-range .ant-input-number {
+  flex: 1;
+  min-width: 0;
+}
+.retail-filter-error {
+  color: #cf3434;
+  font-size: 12px;
+}
+.retail-filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }
 .task-progress-select .ant-select-selector {
   padding-inline: 0 !important;
@@ -2193,8 +2272,43 @@ body:has(.confluence-page) {
   white-space: nowrap;
 }
 .todo-workspace .ant-table-cell {
-  padding: 8px 6px !important;
+  padding: 10px 6px !important;
   overflow-wrap: anywhere;
+}
+.todo-workspace .ant-table,
+.todo-workspace .ant-table-container,
+.todo-workspace .ant-table-cell {
+  border-radius: 0 !important;
+}
+.todo-workspace .ant-table {
+  background: transparent;
+}
+.todo-workspace .ant-table table {
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+.todo-workspace .ant-table-tbody > tr > td {
+  vertical-align: top;
+}
+.todo-count,
+.todo-index {
+  color: #78867f;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.todo-status {
+  width: 100%;
+  font-size: 13px;
+}
+.todo-status .ant-select-selector {
+  padding-inline: 0 18px !important;
+}
+.todo-status .ant-select-arrow {
+  inset-inline-end: 2px;
+}
+.todo-status-options,
+.todo-status-options .ant-select-item {
+  border-radius: 0;
 }
 .todo-workspace .ant-btn-link {
   padding: 0 5px;
@@ -2202,8 +2316,12 @@ body:has(.confluence-page) {
 }
 .todo-workspace .todo-title {
   padding: 2px 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .todo-workspace .todo-note {
+  margin-top: 4px;
+  color: #78867f;
   font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
 }

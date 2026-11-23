@@ -1,4 +1,5 @@
 import { taskRevenue } from './task-revenue';
+import { retailFilterPredicate } from './retail-filters';
 import { explicitRetailDetails } from './retail-details';
 import { orderChannels } from './order-channels';
 import { rememberCompany, forgetCompany, inferredOwner } from './company-learning';
@@ -163,6 +164,9 @@ export async function taskList(u: User, q: Record<string, unknown>): Promise<Row
   const scope = companyFilter(u, 't.company_id');
   const where = [scope.sql, 't.deleted_at IS NULL'];
   const params: unknown[] = [...scope.params];
+  const columnFilters = retailFilterPredicate(q.column_filters);
+  where.push(columnFilters.sql);
+  params.push(...columnFilters.params);
   if (u.role === 'employee') {
     where.push('t.assignee_employee_id=?');
     params.push(u.employee_id ?? '0');

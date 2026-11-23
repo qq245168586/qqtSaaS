@@ -26,6 +26,8 @@ type Todo = z.infer<typeof bodySchema> & {
 const history: Array<{ id: string; reason: string; archived_at: string; snapshot: Todo }> = [];
 let items: Todo[] = [];
 let parseCalls = 0;
+let listCalls = 0;
+let updateCalls = 0;
 const server = createServer(async (req, res) => {
   const u = new URL(req.url ?? '/', 'http://localhost');
   let data: unknown = { items: [], total: 0, total_amount: '0.00', page: 1, page_size: 20 };
@@ -89,6 +91,7 @@ const server = createServer(async (req, res) => {
       server_now: '2026-11-13 18:00:00',
     };
   else if (u.pathname === '/api/todos' && req.method === 'GET') {
+    listCalls++;
     const filter = u.searchParams.get('status');
     const selected = items.filter((i) =>
       filter === 'done'
@@ -130,6 +133,7 @@ const server = createServer(async (req, res) => {
       items = [];
       data = null;
     } else {
+      if (req.method === 'PUT') updateCalls++;
       const v = bodySchema.parse(raw);
       const item = {
         ...v,
@@ -167,8 +171,12 @@ try {
   await p.getByRole('button', { name: '新增待办' }).click();
   const dialog = p.getByRole('dialog');
   await dialog.getByLabel('事项', { exact: true }).fill('测试原料采购');
+  await dialog.getByLabel('备注', { exact: true }).fill('确认采购数量，核对库存后联系供应商。');
   await dialog.locator('.ant-select-selector').click();
-  await p.locator('.ant-select-dropdown:visible').getByTitle('月度任务', { exact: true }).click();
+  await p
+    .locator('.ant-select-dropdown:visible:not(.todo-status-options)')
+    .getByTitle('月度任务', { exact: true })
+    .click();
   await dialog.getByLabel('开始时间', { exact: true }).fill('2026-11-13T08:00');
   await dialog.getByLabel('截止时间', { exact: true }).fill('2026-11-13T17:00');
   await dialog.getByRole('button', { name: '确 定', exact: true }).click();
@@ -178,31 +186,85 @@ try {
   assert.equal(await p.locator('.app-sidebar .ant-badge-dot').count(), 1);
   assert.equal(items[0].progress, 0);
   assert.equal(await p.locator('.todo-workspace .ant-progress').count(), 0);
-  await p.getByRole('checkbox', { name: '完成待办：测试原料采购', exact: true }).click();
+  assert.equal(await p.locator('.todo-index').first().innerText(), '1');
+  assert.equal(await p.locator('.todo-workspace input[type=checkbox]').count(), 0);
+  const noteStyle = await p.locator('.todo-note').evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      border: style.borderTopWidth,
+      radius: style.borderRadius,
+      background: style.backgroundColor,
+    };
+  });
+  assert.deepEqual(noteStyle, { border: '0px', radius: '0px', background: 'rgba(0, 0, 0, 0)' });
+  await p.waitForFunction(() => !document.querySelector('.todo-workspace .ant-spin-spinning'));
+  const callsBeforeUpdate = listCalls;
+  await p.evaluate(() => {
+    document.documentElement.dataset.todoFlash = 'false';
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('.todo-workspace .ant-spin-spinning'))
+        document.documentElement.dataset.todoFlash = 'true';
+      if (document.documentElement.dataset.todoFlash === 'checked') observer.disconnect();
+    });
+    observer.observe(document.querySelector('.todo-workspace')!, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+  });
+  await p.locator('.todo-status .ant-select-selector').click();
+  assert.equal(items[0].progress, 0, '展开状态选项不能直接完成');
+  await p.locator('.todo-status-options:visible').getByTitle('已完成', { exact: true }).click();
   await p.getByText('测试原料采购', { exact: true }).waitFor({ state: 'hidden' });
   assert.equal(items[0].progress, 100);
+  assert.equal(updateCalls, 1);
+  assert.equal(listCalls - callsBeforeUpdate, 1, '状态修改只刷新列表一次');
+  assert.equal(
+    await p.evaluate(() => document.documentElement.dataset.todoFlash),
+    'false',
+    '后台刷新无白色遮罩',
+  );
+  await p.evaluate(() => {
+    document.documentElement.dataset.todoFlash = 'checked';
+  });
   await p.locator('.app-sidebar .ant-badge-dot').waitFor({ state: 'hidden' });
   await p.locator('.todo-workspace .ant-select-selector').first().click();
-  await p.getByTitle('已完成', { exact: true }).click();
+  await p
+    .locator('.ant-select-dropdown:visible:not(.todo-status-options)')
+    .getByTitle('已完成', { exact: true })
+    .click();
   await p.getByText('测试原料采购', { exact: true }).waitFor();
-  await p.getByRole('checkbox', { name: '完成待办：测试原料采购', exact: true }).click();
+  await p.locator('.todo-status .ant-select-selector').click();
+  assert.equal(items[0].progress, 100, '展开状态选项不能直接取消完成');
+  await p.locator('.todo-status-options:visible').getByTitle('未完成', { exact: true }).click();
   await p.getByText('测试原料采购', { exact: true }).waitFor({ state: 'hidden' });
   assert.equal(items[0].progress, 0);
   await p.locator('.app-sidebar .ant-badge-dot').waitFor();
   await p.locator('.todo-workspace .ant-select-selector').first().click();
-  await p.getByTitle('未完成', { exact: true }).click();
+  await p
+    .locator('.ant-select-dropdown:visible:not(.todo-status-options)')
+    .getByTitle('未完成', { exact: true })
+    .click();
   await p.getByText('测试原料采购', { exact: true }).waitFor();
   assert.equal(items[0].recurrence, 'monthly');
-  await p.getByRole('checkbox', { name: '完成待办：测试原料采购', exact: true }).click();
+  await p.locator('.todo-status .ant-select-selector').click();
+  assert.equal(items[0].progress, 0, '展开状态选项不能直接完成');
+  await p.locator('.todo-status-options:visible').getByTitle('已完成', { exact: true }).click();
   await p.getByText('测试原料采购', { exact: true }).waitFor({ state: 'hidden' });
   await p.locator('.todo-workspace .ant-select-selector').first().click();
-  await p.locator('.ant-select-dropdown:visible').getByTitle('已完成', { exact: true }).click();
+  await p
+    .locator('.ant-select-dropdown:visible:not(.todo-status-options)')
+    .getByTitle('已完成', { exact: true })
+    .click();
   await p.getByRole('button', { name: '重新开始', exact: true }).click();
   await p.getByText('测试原料采购', { exact: true }).waitFor({ state: 'hidden' });
   assert.equal(items[0].starts_at, '2026-11-15 10:00');
   assert.equal(items[0].ends_at, '2026-11-15 19:00');
   await p.locator('.todo-workspace .ant-select-selector').first().click();
-  await p.locator('.ant-select-dropdown:visible').getByTitle('未完成', { exact: true }).click();
+  await p
+    .locator('.ant-select-dropdown:visible:not(.todo-status-options)')
+    .getByTitle('未完成', { exact: true })
+    .click();
   await p.getByRole('button', { name: '历史', exact: true }).click();
   await p.getByRole('dialog').getByText('手动重新开始', { exact: true }).waitFor();
   await p.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
@@ -239,7 +301,7 @@ try {
   assert.equal(items.length, 1);
   assert.equal(items[0].progress, 0);
   console.log(
-    'Monthly type, completion checkbox, restart, history, reminders, deletion and AI incomplete default verified using isolated data.',
+    'Monthly type, explicit status selection, row numbers, plain notes, non-flashing refresh, restart, history, reminders, deletion and AI incomplete default verified using isolated data.',
   );
 } finally {
   await app.close();
