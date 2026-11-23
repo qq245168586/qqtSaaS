@@ -1,6 +1,6 @@
 # 天美意趣趣特管理系统（qqtSaaS）
 
-当前源码版本：桌面端 **2.1.32**。包含零售订单、送货单、BOM、成本核算、员工排班、待办事项和 Confluence 文档管理。
+当前源码版本：桌面端 **2.1.33**。包含零售订单、送货单、BOM、成本核算、员工排班、待办事项和 Confluence 文档管理。
 
 这是完整源码仓库，`server`、`desktop`、`web` 是普通目录，不依赖 Git submodule。2026-11-16 从现有业务工程的最新提交整合，原始提交来源见 [SOURCE_SNAPSHOTS.md](SOURCE_SNAPSHOTS.md)。本次提交保存当前源码快照；原本地工程保留；服务器旧 Git 历史已移入私有备份。后续统一在本仓库开发和推送。
 
@@ -47,7 +47,7 @@ npm ci
 npm run dev
 ```
 
-各子项目提供 `npm run typecheck`、`npm test`、`npm run build`。桌面打包见 [desktop/README.md](desktop/README.md)，本版说明见 [desktop/RELEASE-2.1.32.md](desktop/RELEASE-2.1.32.md)。Swagger 启动步骤见 [api-docs/README.md](api-docs/README.md)。根目录的依赖用于 `tools/` 和工程级测试。
+各子项目提供 `npm run typecheck`、`npm test`、`npm run build`。桌面打包见 [desktop/README.md](desktop/README.md)，本版说明见 [desktop/RELEASE-2.1.33.md](desktop/RELEASE-2.1.33.md)。Swagger 启动步骤见 [api-docs/README.md](api-docs/README.md)。根目录的依赖用于 `tools/` 和工程级测试。
 
 ## 数据与部署
 
