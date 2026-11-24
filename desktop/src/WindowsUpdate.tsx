@@ -19,6 +19,8 @@ function DownloadIcon() {
 
 const updateStateSchema = z.object({
   supported: z.boolean(),
+  manual_required: z.boolean(),
+  failure_code: z.string().nullable(),
   phase: z.enum([
     'unsupported',
     'idle',
@@ -37,15 +39,36 @@ const updateStateSchema = z.object({
 });
 type UpdateState = z.infer<typeof updateStateSchema>;
 
+const clientIdentitySchema = z.object({
+  device_id: z.string().uuid(),
+  app_version: z.string(),
+  previous_update: z
+    .object({
+      success: z.boolean(),
+      target_version: z.string(),
+      phase: z.string(),
+      exit_code: z.number().optional(),
+    })
+    .nullable(),
+});
 export function WindowsUpdate() {
+  const [identity, setIdentity] = useState<z.infer<typeof clientIdentitySchema> | null>(null);
   const [state, setState] = useState<UpdateState | null>(null);
   const notified = useRef('');
+  const errorNotified = useRef('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   useEffect(() => {
+    void ipc(window.desktop.getClientIdentity(), clientIdentitySchema)
+      .then(setIdentity)
+      .catch(() => undefined);
     const accept = (value: unknown) => {
       const parsed = updateStateSchema.safeParse(value);
       if (!parsed.success) return;
       setState(parsed.data);
+      if (parsed.data.phase === 'error' && errorNotified.current !== parsed.data.message) {
+        errorNotified.current = parsed.data.message;
+        setConfirmOpen(true);
+      }
       if (
         parsed.data.phase === 'downloaded' &&
         parsed.data.available_version &&
@@ -98,7 +121,13 @@ export function WindowsUpdate() {
       </Tooltip>
       <Modal
         open={confirmOpen}
-        title={state.phase === 'error' ? '应用更新未完成' : '重启并安装更新？'}
+        title={
+          state.phase === 'error'
+            ? state.manual_required
+              ? '无法自动安装，请手动安装'
+              : '更新失败'
+            : '重启并安装更新？'
+        }
         onCancel={() => setConfirmOpen(false)}
         footer={[
           <Button key="later" onClick={() => setConfirmOpen(false)}>
@@ -106,6 +135,7 @@ export function WindowsUpdate() {
           </Button>,
           <Button
             key="manual"
+            type={state.manual_required ? 'primary' : 'default'}
             disabled={!state.available_version}
             onClick={() =>
               void ipc(window.desktop.downloadUpdateManually(), z.boolean()).catch((error) =>
@@ -118,7 +148,7 @@ export function WindowsUpdate() {
           state.phase === 'error' ? (
             <Button
               key="retry"
-              type="primary"
+              type={state.manual_required ? 'default' : 'primary'}
               onClick={() =>
                 void ipc(window.desktop.checkForUpdates(), updateStateSchema).catch((error) =>
                   message.error(errorText(error)),
@@ -145,7 +175,20 @@ export function WindowsUpdate() {
             ? state.message
             : '请先保存正在编辑的内容。App 将退出，在后台静默更新后自动打开，无需操作安装向导。'}
         </p>
-        <p>若无法自动安装，可以手动下载安装包，退出 App 后安装到原来的目录。</p>
+        {identity && (
+          <p style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+            设备编号：{identity.device_id} · 版本：{identity.app_version}
+          </p>
+        )}
+        {identity?.previous_update && !identity.previous_update.success && (
+          <p>
+            上次更新尚未完成：目标版本 {identity.previous_update.target_version}，当前仍为{' '}
+            {identity.app_version}。诊断记录将在联网后自动上传。
+          </p>
+        )}
+        <p>
+          手动安装时，请先退出 App，再运行官方安装包并安装到原来的目录。不要继续运行校验失败的文件。
+        </p>
       </Modal>
     </>
   );

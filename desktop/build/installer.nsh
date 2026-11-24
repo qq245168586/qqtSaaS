@@ -56,7 +56,8 @@ Var tmyRescueNeeded
     DeleteRegKey ${_ROOT_KEY} "${UNINSTALL_REGISTRY_KEY}"
     ${If} "${_ROOT_KEY}" == "HKLM"
     ${AndIf} ${Errors}
-      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION|MB_TOPMOST "检测到旧版本的卸载记录已经损坏。点击“确定”后 Windows 会弹出权限确认，请选择“是”，安装器将修复记录并继续。" /SD IDCANCEL IDOK +2
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION|MB_TOPMOST "检测到旧版本的卸载记录已经损坏。点击“确定”后 Windows 会弹出权限确认，请选择“是”，安装器将修复记录并继续。" /SD IDCANCEL IDOK +3
+      SetErrorLevel 1003
       Quit
       nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$SYSDIR\reg.exe' -ArgumentList 'DELETE','HKLM\${UNINSTALL_REGISTRY_KEY}','/f','/reg:64' -Verb RunAs -WindowStyle Hidden -Wait"`
       Pop $R1
@@ -115,6 +116,7 @@ Var tmyRescueNeeded
     Goto tmy_manager_cleanup_done
 
   tmy_manager_cleanup_cancelled:
+    SetErrorLevel 1001
     Quit
 
   tmy_manager_cleanup_done:
@@ -142,6 +144,7 @@ Var tmyRescueNeeded
     Goto tmy_manager_close_done
 
   tmy_manager_close_cancelled:
+    SetErrorLevel 1002
     Quit
 
   tmy_manager_close_done:

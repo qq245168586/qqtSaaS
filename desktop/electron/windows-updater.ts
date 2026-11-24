@@ -1,3 +1,4 @@
+import { classifyUpdateError, type UpdateFailure } from './update-errors.js';
 export type UpdatePhase =
   | 'unsupported'
   | 'idle'
@@ -16,6 +17,8 @@ export interface UpdateState {
   percent: number | null;
   message: string;
   checked_at: string | null;
+  manual_required: boolean;
+  failure_code: string | null;
 }
 
 type Publish = (state: UpdateState) => void;
@@ -24,11 +27,6 @@ function version(value: unknown): string | null {
   return typeof value === 'string' && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value)
     ? value
     : null;
-}
-
-function errorMessage(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error || '未知错误');
-  return raw.replace(/[\r\n]+/g, ' ').slice(0, 240);
 }
 
 export class WindowsUpdateManager {
@@ -50,6 +48,8 @@ export class WindowsUpdateManager {
       percent: null,
       message: supported ? '尚未检查更新' : '自动更新仅在 Windows 安装版启用',
       checked_at: null,
+      manual_required: false,
+      failure_code: null,
     };
   }
 
@@ -70,6 +70,8 @@ export class WindowsUpdateManager {
       return this.getState();
     this.change({
       phase: 'checking',
+      manual_required: false,
+      failure_code: null,
       message: '正在检查更新…',
       percent: null,
       checked_at: this.now(),
@@ -92,6 +94,8 @@ export class WindowsUpdateManager {
     const next = version(value);
     this.change({
       phase: 'downloading',
+      manual_required: false,
+      failure_code: null,
       available_version: next,
       percent: 0,
       message: next ? `发现新版本 ${next}，正在后台下载…` : '发现新版本，正在后台下载…',
@@ -117,7 +121,9 @@ export class WindowsUpdateManager {
       phase: 'downloaded',
       available_version: next,
       percent: 100,
-      message: next ? `新版本 ${next} 已下载，重启后安装` : '新版本已下载，重启后安装',
+      message: next
+        ? `新版本 ${next} 已下载，请点击“重启更新”安装`
+        : '新版本已下载，请点击“重启更新”安装',
       checked_at: this.now(),
     });
   }
@@ -126,6 +132,8 @@ export class WindowsUpdateManager {
     if (!this.state.supported) return;
     this.change({
       phase: 'up-to-date',
+      manual_required: false,
+      failure_code: null,
       available_version: null,
       percent: null,
       message: `当前 ${this.state.current_version} 已是最新版`,
@@ -133,12 +141,27 @@ export class WindowsUpdateManager {
     });
   }
 
-  failed(error: unknown): void {
+  restoreFailure(target: string, failure: UpdateFailure): void {
     if (!this.state.supported) return;
     this.change({
       phase: 'error',
+      available_version: version(target),
+      manual_required: true,
+      failure_code: failure.code,
+      message: failure.message,
+      checked_at: this.now(),
+    });
+  }
+
+  failed(error: unknown): void {
+    if (!this.state.supported) return;
+    const failure = classifyUpdateError(error, this.state.phase === 'installing');
+    this.change({
+      phase: 'error',
+      manual_required: failure.manual_required,
+      failure_code: failure.code,
       percent: null,
-      message: `更新失败：${errorMessage(error)}`,
+      message: failure.message,
       checked_at: this.now(),
     });
   }

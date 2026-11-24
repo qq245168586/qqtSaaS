@@ -20,11 +20,16 @@ export interface WindowsUpdateLaunch {
   args: string[];
   options: SpawnOptions;
 }
+export interface UpdateReceiptTarget {
+  file: string;
+  attempt_id: string;
+}
 
 export function createWindowsUpdateLaunch(
   installerPath: string,
   parentPid: number,
   environment: NodeJS.ProcessEnv = process.env,
+  receipt?: UpdateReceiptTarget,
 ): WindowsUpdateLaunch {
   if (
     !/^[A-Za-z]:[\\/]/.test(installerPath) ||
@@ -39,16 +44,28 @@ export function createWindowsUpdateLaunch(
   // working updater. Paths stay in env, never interpolated into PowerShell code.
   const script = [
     "$ErrorActionPreference = 'Stop'",
+    'function Save-UpdateResult($phase, $exitCode) { if ($env:TMY_UPDATE_RESULT) { @{ attempt_id=$env:TMY_UPDATE_ATTEMPT; phase=$phase; exit_code=$exitCode; reason=$script:failureReason } | ConvertTo-Json -Compress | Set-Content -LiteralPath $env:TMY_UPDATE_RESULT -Encoding UTF8 } }',
+    'function Get-UpdateErrorCode($record) { $exception=$record.Exception; while ($exception) { if ($exception -is [System.ComponentModel.Win32Exception]) { return $exception.NativeErrorCode }; $exception=$exception.InnerException }; return $record.Exception.HResult }',
+    "$script:failureReason = 'launch_error'",
     'try {',
-    "if (!(Test-Path -LiteralPath $env:TMY_UPDATE_INSTALLER -PathType Leaf)) { throw '更新安装包不存在，请重新下载' }",
+    "if (!(Test-Path -LiteralPath $env:TMY_UPDATE_INSTALLER -PathType Leaf)) { $script:failureReason = 'installer_missing'; throw 'Installer missing' }",
     '$parentId = [int]$env:TMY_UPDATE_PARENT_PID',
+    "Save-UpdateResult 'helper_ready' $null",
     "[Console]::Out.WriteLine('TMY_UPDATE_READY')",
     '[Console]::Out.Flush()',
-    'Wait-Process -Id $parentId -ErrorAction SilentlyContinue',
+    "Save-UpdateResult 'waiting_for_exit' $null",
+    'Wait-Process -Id $parentId -Timeout 120 -ErrorAction SilentlyContinue',
+    "if (Get-Process -Id $parentId -ErrorAction SilentlyContinue) { $script:failureReason = 'app_exit_timeout'; throw 'App exit timed out' }",
     'Start-Sleep -Milliseconds 2000',
-    "$installer = Start-Process -FilePath $env:TMY_UPDATE_INSTALLER -ArgumentList @('/S','--updated','--force-run') -Wait -PassThru -ErrorAction Stop",
+    "Save-UpdateResult 'installer_started' $null",
+    "$installer = Start-Process -FilePath $env:TMY_UPDATE_INSTALLER -ArgumentList @('/S','--updated','--force-run') -PassThru -ErrorAction Stop",
+    '$null = $installer.Handle',
+    '$installer.WaitForExit()',
+    '$installer.Refresh()',
+    "$script:failureReason = 'installer_exit'",
+    "Save-UpdateResult 'installer_finished' $installer.ExitCode",
     "if ($installer.ExitCode -ne 0) { throw ('静默更新失败，安装程序退出码：' + $installer.ExitCode) }",
-    "} catch { $_ | Out-String | Add-Content -LiteralPath ($env:TMY_UPDATE_INSTALLER + '.launch.log'); exit 1 }",
+    "} catch { Save-UpdateResult 'failed' $(if ($installer) { $installer.ExitCode } else { Get-UpdateErrorCode $_ }); exit 1 }",
   ]
     .join('; ')
     .replace('try {;', 'try { ')
@@ -64,6 +81,9 @@ export function createWindowsUpdateLaunch(
         ...environment,
         TMY_UPDATE_INSTALLER: installerPath,
         TMY_UPDATE_PARENT_PID: String(parentPid),
+        ...(receipt
+          ? { TMY_UPDATE_RESULT: receipt.file, TMY_UPDATE_ATTEMPT: receipt.attempt_id }
+          : {}),
       },
     },
   };
@@ -73,8 +93,9 @@ export async function launchWindowsUpdateAfterExit(
   installerPath: string,
   parentPid: number,
   spawnDetached: SpawnDetached = spawn,
+  receipt?: UpdateReceiptTarget,
 ): Promise<void> {
-  const launch = createWindowsUpdateLaunch(installerPath, parentPid);
+  const launch = createWindowsUpdateLaunch(installerPath, parentPid, process.env, receipt);
   await new Promise<void>((resolve, reject) => {
     const helper = spawnDetached(launch.command, launch.args, launch.options);
     let settled = false;

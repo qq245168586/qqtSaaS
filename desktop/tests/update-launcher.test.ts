@@ -37,9 +37,10 @@ test('更新助手使用系统绝对路径，校验安装包并在退出前确�
   assert.match(launch.args.at(-1) ?? '', /Start-Sleep -Milliseconds 2000/);
   assert.match(launch.args.at(-1) ?? '', /--updated/);
   assert.match(launch.args.at(-1) ?? '', /@\('\/S','--updated','--force-run'\)/);
-  assert.match(launch.args.at(-1) ?? '', /-Wait -PassThru/);
+  assert.match(launch.args.at(-1) ?? '', /\$installer\.WaitForExit\(\)/);
+  assert.doesNotMatch(launch.args.at(-1) ?? '', /-Wait -PassThru/);
   assert.match(launch.args.at(-1) ?? '', /ExitCode -ne 0/);
-  assert.match(launch.args.at(-1) ?? '', /\.launch\.log/);
+  assert.match(launch.args.at(-1) ?? '', /Save-UpdateResult 'installer_finished'/);
   assert.equal(launch.options.detached, true);
   assert.deepEqual(launch.options.stdio, ['ignore', 'pipe', 'pipe']);
   assert.equal(launch.options.env?.TMY_UPDATE_INSTALLER, installer);

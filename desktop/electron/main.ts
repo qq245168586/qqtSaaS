@@ -1,4 +1,7 @@
+import { receiptFailure } from './update-errors.js';
+import { beginUpdateReceipt, readUpdateReceipt, clearUpdateReceipt } from './update-receipt.js';
 import { trustedMediaUrl } from './media-permission.js';
+import { ClientDiagnostics, clientHeaders, safeError, safeRoute } from './client-diagnostics.js';
 import { cachedImage, imageType, invalidateImage } from './image-cache.js';
 import { submitPrintWithCompatibility } from './print-job.js';
 import { WindowsUpdateManager } from './windows-updater.js';
@@ -18,6 +21,45 @@ let baseUrl = deployedServer;
 let accessToken = '';
 let publicSession = false;
 let downloadedWindowsInstaller = '';
+let diagnostics: ClientDiagnostics | undefined;
+async function flushDiagnostics() {
+  if (!diagnostics || !accessToken || !app.isPackaged) return;
+  await diagnostics.flush(async (events) => {
+    const response = await fetch(baseUrl + '/client-diagnostics/events', {
+      method: 'POST',
+      headers: {
+        ...clientHeaders(diagnostics!.identity),
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ events }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Diagnostic upload failed');
+    return z
+      .object({ code: z.literal(0), data: z.object({ accepted: z.array(z.string().uuid()) }) })
+      .parse(await response.json()).data.accepted;
+  });
+}
+async function appFetch(url: string | URL, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  const metadata = diagnostics ? clientHeaders(diagnostics.identity) : {};
+  for (const [key, value] of Object.entries(metadata)) headers.set(key, value);
+  const method = z
+    .enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
+    .catch('GET')
+    .parse(options.method ?? 'GET');
+  const context = { request_id: metadata['X-Request-ID'], route: safeRoute(String(url)), method };
+  try {
+    const response = await fetch(url, { ...options, headers });
+    if (!response.ok) diagnostics?.record('http_error', { ...context, status: response.status });
+    return response;
+  } catch (error) {
+    diagnostics?.record('network_error', { ...context, ...safeError(error) });
+    throw error;
+  }
+}
 const credentials = () => path.join(app.getPath('userData'), 'session.encrypted');
 const settings = () => path.join(app.getPath('userData'), 'connection.json');
 const serverSchema = z
@@ -52,7 +94,7 @@ const sessionSchema = z.object({
 });
 async function request(route: string, body?: unknown, method: 'GET' | 'POST' = 'POST') {
   if (!baseUrl) throw new Error('请先配置服务器地址');
-  const response = await fetch(baseUrl + route, {
+  const response = await appFetch(baseUrl + route, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -84,6 +126,7 @@ async function remember(data: unknown) {
   if (session.user.public_access) throw new Error('公开会话请使用公司入口');
   publicSession = false;
   accessToken = session.access_token;
+  void flushDiagnostics();
   if (session.refresh_token) {
     if (
       !safeStorage.isEncryptionAvailable() ||
@@ -109,6 +152,7 @@ function handle(name: string, fn: (value: unknown) => Promise<unknown>) {
     try {
       return { ok: true, data: await fn(value) };
     } catch (e) {
+      if (name !== 'diagnostics:renderer-error') diagnostics?.record('ipc_error', safeError(e));
       return { ok: false, error: e instanceof Error ? e.message : '操作失败' };
     }
   });
@@ -130,6 +174,52 @@ app.on('second-instance', () => {
 });
 async function start() {
   await mkdir(app.getPath('userData'), { recursive: true });
+  diagnostics = new ClientDiagnostics(
+    app.getPath('userData'),
+    app.getVersion() + (app.isPackaged ? '' : '-dev'),
+    process.platform,
+    process.arch,
+  );
+  diagnostics.record('app_started');
+  const previousUpdate = readUpdateReceipt(app.getPath('userData'), app.getVersion());
+  if (previousUpdate) {
+    diagnostics.record(previousUpdate.success ? 'update_succeeded' : 'update_incomplete', {
+      target_version: previousUpdate.target_version,
+      phase: previousUpdate.phase,
+      exit_code: previousUpdate.exit_code,
+      error_type: previousUpdate.success
+        ? undefined
+        : receiptFailure(previousUpdate.phase, previousUpdate.exit_code, previousUpdate.reason)
+            .code,
+    });
+    if (previousUpdate.success) clearUpdateReceipt(app.getPath('userData'));
+  }
+  process.on('uncaughtExceptionMonitor', (error) =>
+    diagnostics?.record('main_error', safeError(error)),
+  );
+  setInterval(() => void flushDiagnostics(), 60_000).unref();
+  handle('diagnostics:identity', async () => ({
+    ...diagnostics!.identity,
+    previous_update: previousUpdate,
+  }));
+  handle('diagnostics:renderer-error', async (value) => {
+    const input = z
+      .object({
+        kind: z.enum(['error', 'rejection']),
+        frames: z
+          .array(
+            z
+              .string()
+              .regex(/^[a-zA-Z0-9_.-]+\.[cm]?js:\d+:\d+$/)
+              .max(120),
+          )
+          .max(8),
+      })
+      .strict()
+      .parse(value);
+    diagnostics?.record('renderer_error', { error_type: input.kind, frames: input.frames });
+    return true;
+  });
   if (!app.isPackaged) {
     try {
       baseUrl = serverSchema.parse(JSON.parse(await readFile(settings(), 'utf8')));
@@ -140,7 +230,10 @@ async function start() {
   handle('connection:get', async () => baseUrl);
   handle('compliance:reminders', async () => {
     const url = new URL('/compliance/api/reminders', baseUrl);
-    const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15_000) });
+    const response = await appFetch(url, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+    });
     if (!response.ok) throw new Error(`合规提醒读取失败（${response.status}）`);
     return z
       .object({
@@ -176,6 +269,7 @@ async function start() {
       throw new Error('公开入口返回了无效会话');
     publicSession = true;
     accessToken = session.access_token;
+    void flushDiagnostics();
     return { access_token: session.access_token, user: session.user };
   });
   handle('auth:login', async (value) => {
@@ -281,7 +375,7 @@ async function start() {
       headers['Content-Type'] = 'application/json';
       body = input.text;
     }
-    const response = await fetch(baseUrl + input.path, {
+    const response = await appFetch(baseUrl + input.path, {
       method: input.method,
       headers,
       body,
@@ -312,7 +406,7 @@ async function start() {
       .parse(value);
     if (!accessToken) throw new Error('请先登录');
     // Authorize against current metadata even on cache hits; never trust renderer URLs.
-    const response = await fetch(`${baseUrl}/tasks/${input.taskId}/images?page_size=100`, {
+    const response = await appFetch(`${baseUrl}/tasks/${input.taskId}/images?page_size=100`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       redirect: 'error',
       signal: AbortSignal.timeout(20000),
@@ -341,7 +435,10 @@ async function start() {
       async () => {
         const url = new URL(item.url, baseUrl);
         if (url.origin !== new URL(baseUrl).origin) throw new Error('附件地址不可信');
-        const result = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
+        const result = await appFetch(url, {
+          redirect: 'error',
+          signal: AbortSignal.timeout(30000),
+        });
         if (!result.ok) throw new Error('图片下载失败');
         if (Number(result.headers.get('content-length')) > 10 * 1024 * 1024)
           throw new Error('图片超过10MiB');
@@ -357,7 +454,7 @@ async function start() {
       path.join(app.getPath('userData'), 'attachment-cache'),
       `${baseUrl}:wiki:${id}:immutable`,
       async () => {
-        const response = await fetch(`${baseUrl}/wiki/images/${id}`, {
+        const response = await appFetch(`${baseUrl}/wiki/images/${id}`, {
           headers: { Authorization: `Bearer ${accessToken}` },
           redirect: 'error',
           signal: AbortSignal.timeout(20_000),
@@ -372,7 +469,10 @@ async function start() {
         if (!response.ok || body.code !== 0) throw new Error(body.message);
         const url = new URL(body.data.url, baseUrl);
         if (url.origin !== new URL(baseUrl).origin) throw new Error('附件地址不可信');
-        const result = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30_000) });
+        const result = await appFetch(url, {
+          redirect: 'error',
+          signal: AbortSignal.timeout(30_000),
+        });
         if (!result.ok) throw new Error('图片下载失败');
         if (Number(result.headers.get('content-length')) > 10 * 1024 * 1024)
           throw new Error('图片超过10MiB');
@@ -412,7 +512,7 @@ async function start() {
       })
       .strict()
       .parse(value);
-    const online = await fetch(baseUrl + '/auth/me', {
+    const online = await appFetch(baseUrl + '/auth/me', {
       headers: { Authorization: `Bearer ${accessToken}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10000),
@@ -454,20 +554,43 @@ async function start() {
   const updates = new WindowsUpdateManager(
     updateSupported,
     app.getVersion(),
-    async () => autoUpdater.checkForUpdates(),
+    async () => {
+      autoUpdater.requestHeaders = clientHeaders(diagnostics!.identity);
+      return autoUpdater.checkForUpdates();
+    },
     () =>
       installWindowsUpdate({
         windows: () => BrowserWindow.getAllWindows(),
         launchInstaller: () => {
           if (!downloadedWindowsInstaller) throw new Error('更新安装包尚未准备好');
-          return launchWindowsUpdateAfterExit(downloadedWindowsInstaller, process.pid);
+          const target = updates.getState().available_version;
+          if (!target) throw new Error('更新版本尚未准备好');
+          const receipt = beginUpdateReceipt(app.getPath('userData'), app.getVersion(), target);
+          diagnostics?.record('update_requested', { target_version: target });
+          return launchWindowsUpdateAfterExit(
+            downloadedWindowsInstaller,
+            process.pid,
+            undefined,
+            receipt,
+          );
         },
         exitApp: (code) => app.exit(code),
       }),
     (state) => {
+      if (state.phase !== 'unsupported')
+        diagnostics?.record('update_state', {
+          phase: state.phase,
+          target_version: state.available_version ?? undefined,
+          error_type: state.failure_code ?? undefined,
+        });
       if (window && !window.isDestroyed()) window.webContents.send('update:state', state);
     },
   );
+  if (previousUpdate && !previousUpdate.success)
+    updates.restoreFailure(
+      previousUpdate.target_version,
+      receiptFailure(previousUpdate.phase, previousUpdate.exit_code, previousUpdate.reason),
+    );
   handle('update:get', async () => updates.getState());
   handle('update:check', async (value) => {
     z.object({})
@@ -493,6 +616,7 @@ async function start() {
     return true;
   });
   if (updateSupported) {
+    autoUpdater.requestHeaders = clientHeaders(diagnostics.identity);
     autoUpdater.autoDownload = true;
     autoUpdater.autoInstallOnAppQuit = false;
     autoUpdater.allowDowngrade = false;
@@ -519,6 +643,10 @@ async function start() {
       sandbox: true,
     },
   });
+  window.webContents.setUserAgent(clientHeaders(diagnostics.identity)['User-Agent']);
+  window.webContents.on('render-process-gone', (_event, details) =>
+    diagnostics?.record('renderer_crashed', { exit_code: details.exitCode }),
+  );
   const trustedMediaOrigin = (url: string) =>
     trustedMediaUrl(url, path.join(here, '../../dist/index.html'), !app.isPackaged);
   window.webContents.session.setPermissionCheckHandler(
@@ -551,8 +679,15 @@ async function start() {
   if (!app.isPackaged && dev === 'http://127.0.0.1:5176') await window.loadURL(dev);
   else await window.loadFile(path.join(here, '../../dist/index.html'));
   if (updateSupported) {
-    setTimeout(() => void updates.check(), 10_000).unref();
-    setInterval(() => void updates.check(), 4 * 60 * 60 * 1000).unref();
+    setTimeout(() => {
+      if (!updates.getState().manual_required) void updates.check();
+    }, 10_000).unref();
+    setInterval(
+      () => {
+        if (!updates.getState().manual_required) void updates.check();
+      },
+      4 * 60 * 60 * 1000,
+    ).unref();
   }
 }
 void app

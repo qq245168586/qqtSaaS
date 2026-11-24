@@ -1,4 +1,5 @@
 import { VoiceController } from './voice';
+import { ClientDiagnosticsController, diagnosticMiddleware } from './client-diagnostics';
 import { AiRequestError } from './ai-errors';
 import 'reflect-metadata';
 import { TodosController } from './todos';
@@ -91,6 +92,7 @@ class HealthController {
 }
 @Module({
   controllers: [
+    ClientDiagnosticsController,
     HealthController,
     VoiceController,
     TodosController,
@@ -132,6 +134,8 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   app.set('trust proxy', 'loopback');
   app.setGlobalPrefix('api');
+  app.use(diagnosticMiddleware);
+  app.use('/api/client-diagnostics/events', json({ limit: '64kb' }));
   app.use(json({ limit: '10mb' }));
   app.use(cookieParser());
   app.useGlobalFilters(new Errors());

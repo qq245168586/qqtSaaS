@@ -29,6 +29,11 @@ declare global {
       saveFile: (name: string, data: Uint8Array) => Promise<unknown>;
       openExternal: (url: string) => Promise<unknown>;
       getUpdateState: () => Promise<unknown>;
+      getClientIdentity: () => Promise<unknown>;
+      reportRendererError: (value: {
+        kind: 'error' | 'rejection';
+        frames: string[];
+      }) => Promise<unknown>;
       checkForUpdates: () => Promise<unknown>;
       installUpdate: () => Promise<unknown>;
       downloadUpdateManually: () => Promise<unknown>;

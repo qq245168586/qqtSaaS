@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('desktop', {
   saveFile: (name: string, data: Uint8Array) => invoke('file:save', { name, data }),
   openExternal: (url: string) => invoke('system:open-external', url),
   getUpdateState: () => invoke('update:get'),
+  getClientIdentity: () => invoke('diagnostics:identity'),
+  reportRendererError: (value: unknown) => invoke('diagnostics:renderer-error', value),
   checkForUpdates: () => invoke('update:check', {}),
   installUpdate: () => invoke('update:install', {}),
   downloadUpdateManually: () => invoke('update:download-manually', {}),
