@@ -2325,3 +2325,200 @@ body:has(.confluence-page) {
   font-weight: 400;
   line-height: 1.6;
 }
+
+/* Retail worksheet: quiet, compact, direct editing. */
+.retail-sheet {
+  background: var(--surface, #fff);
+  border-top: 1px solid #dce3df;
+}
+.retail-sheet.is-fullscreen {
+  position: fixed;
+  inset: 12px;
+  z-index: 1000;
+  overflow: auto;
+  padding: 12px;
+  box-shadow: 0 0 0 20px #f4f6f4;
+}
+.retail-sheet-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.retail-sheet-toolbar > span:first-child {
+  flex: 1;
+  color: #718078;
+}
+.retail-sheet-toolbar .ant-btn {
+  border-radius: 0;
+}
+.retail-column-grip {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 3;
+}
+.retail-column-grip:hover,
+.retail-column-grip:focus {
+  border-right: 2px solid #28624f;
+  outline: none;
+}
+.retail-inline-cell {
+  min-width: 0;
+  position: relative;
+  flex: 1;
+}
+.retail-cell-value {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 3px 2px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: text;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 0;
+}
+.retail-cell-value:hover:not(:disabled),
+.retail-cell-value:focus-visible {
+  background: #ffffff66;
+  border-bottom-color: #4b806d;
+  outline: none;
+}
+.retail-cell-value:disabled {
+  cursor: default;
+}
+.retail-inline-cell .ant-input,
+.retail-inline-cell .ant-input-affix-wrapper {
+  border: 0 !important;
+  border-bottom: 1px solid #407761 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: #ffffffb3;
+  padding: 3px 2px;
+}
+.retail-inline-cell small {
+  display: block;
+  font-size: 11px;
+  color: #67776e;
+}
+.retail-inline-cell.has-error small {
+  color: #b52e2e;
+  white-space: normal;
+}
+.retail-order-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.retail-order-title > .task-order-toggle {
+  flex: 0 0 20px;
+  padding: 0;
+}
+.retail-order-title .retail-cell-value {
+  font-weight: 600;
+}
+.retail-order-title > .secondary {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.retail-plain-select {
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  width: 100%;
+  color: inherit;
+  padding: 4px 0;
+  font: inherit;
+}
+.retail-plain-select:focus {
+  outline: none;
+  border-bottom-color: #407761;
+}
+.retail-sheet .task-amount-cell {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+.retail-sheet .task-amount-cell > .task-inline-fee {
+  flex-basis: 100%;
+}
+.retail-sheet .task-amount-cell > .task-inline-fee .retail-inline-cell {
+  flex: 0 1 110px;
+}
+.retail-sheet .task-expanded-content .retail-cell-value {
+  white-space: pre-wrap;
+}
+.retail-order-form {
+  margin: 12px 0;
+  padding: 16px;
+  border-top: 2px solid #36735c;
+  border-bottom: 1px solid #d9e0db;
+  background: #fff;
+}
+.retail-order-form h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+.retail-order-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 5;
+  padding: 8px 0;
+  border-bottom: 1px solid #e1e5e2;
+  margin-bottom: 12px;
+}
+.retail-order-form .ant-form-item {
+  margin-bottom: 12px;
+}
+.retail-order-form .ant-form-item-label {
+  padding-bottom: 4px;
+}
+.retail-order-form .ant-form-item-label > label {
+  font-size: 12px;
+}
+.retail-order-form .ant-input {
+  border-radius: 0;
+}
+
+.retail-cell-placeholder {
+  color: #8b958f;
+  font-weight: 400;
+}
+.retail-order-title > .secondary {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.retail-order-note {
+  margin-top: 6px;
+  color: #718078;
+}
+.retail-sheet .ant-table-thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f5f7f4;
+}

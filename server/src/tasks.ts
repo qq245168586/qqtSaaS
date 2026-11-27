@@ -1,3 +1,4 @@
+import { retailCellSchema, cellPatch } from './retail-cell';
 import { taskRevenue } from './task-revenue';
 import { retailFilterPredicate } from './retail-filters';
 import { explicitRetailDetails } from './retail-details';
@@ -109,8 +110,8 @@ export function taskView(row: Row): Row {
   );
   return {
     ...rest,
-    product_summary: row.product_summary || recovered.product_summary,
-    delivery_address: row.delivery_address || recovered.delivery_address,
+    product_summary: row.product_summary ?? recovered.product_summary,
+    delivery_address: row.delivery_address ?? recovered.delivery_address,
     content: detail ?? '',
     note: remark ?? '',
     expected_delivery_at: row.expected_delivery_at
@@ -394,6 +395,44 @@ export class TaskController {
       );
     });
     req.user = writeUser(req.user);
+    return this.get(req, recordId);
+  }
+  @Patch(':id/cell') async editCell(
+    @Req() req: AuthRequest,
+    @Param('id') recordId: string,
+    @Body() body: unknown,
+  ): Promise<Row> {
+    manager(req.user);
+    const input = retailCellSchema.parse(body);
+    await db.transaction(async (m) => {
+      const old = await taskRecord(recordId, req.user, m, true);
+      const values = cellPatch(input, taskView(old));
+      const documentDate = String(
+        input.field === 'expected_delivery_at'
+          ? values.expected_delivery_at || old.created_at || businessToday()
+          : old.expected_delivery_at || old.created_at || businessToday(),
+      ).slice(0, 10);
+      for (const field of ['assignee_employee_id', 'order_taker_employee_id'] as const) {
+        if (input.field !== field && input.field !== 'expected_delivery_at') continue;
+        const employeeId = input.field === field ? values[field] : old[field];
+        if (!employeeId) continue;
+        const employee = await globalEmployeeRecord(String(employeeId), m, true);
+        if (!employeeAvailable(employee, documentDate))
+          throw new BadRequestException('该订单日期员工已离职，不可选择');
+        if (input.field === 'assignee_employee_id') {
+          if (!employee.department_id) throw new BadRequestException('该员工尚未设置部门');
+          await globalDepartmentRecord(String(employee.department_id), m, true);
+          values.department_id = String(employee.department_id);
+        }
+      }
+      await update(
+        'tasks',
+        recordId,
+        String(old.company_id),
+        { ...values, updated_by: req.user.id },
+        m,
+      );
+    });
     return this.get(req, recordId);
   }
   @Patch(':id/status') async status(

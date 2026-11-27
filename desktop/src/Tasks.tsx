@@ -1,3 +1,5 @@
+import { RetailInlineCell, retailTableComponents } from './RetailInlineCell';
+import type { TableColumnsType, ModalProps } from 'antd';
 import { retailFlavor } from './retail-flavor';
 import { RetailColumnFilter, readRetailFilters, type RetailFilterRule } from './RetailColumnFilter';
 import { OrderChannelField } from './OrderChannelField';
@@ -41,92 +43,23 @@ import {
   type TaskInput,
 } from './contracts';
 const options = (items: Resource[]) => items.map((x) => ({ label: x.name, value: x.id }));
-function InlineDeliveryFee({
-  task,
-  editable,
-  onSaved,
-}: {
-  task: Task;
-  editable: boolean;
-  onSaved: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState('');
-  const [savedValue, setSavedValue] = useState(String(task.delivery_fee ?? '0'));
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const canceledRef = useRef(false);
-  useEffect(() => setSavedValue(String(task.delivery_fee ?? '0')), [task.delivery_fee]);
-  const save = async () => {
-    if (savingRef.current || canceledRef.current) return;
-    const next = value.trim() || '0';
-    if (!/^\d{1,10}(\.\d{1,2})?$/.test(next)) {
-      void message.error('运费须为非负金额，最多两位小数');
-      return;
-    }
-    savingRef.current = true;
-    setSaving(true);
-    try {
-      const updated = await api('PATCH', `/tasks/${task.id}/delivery-fee`, taskSchema, {
-        delivery_fee: next,
-      });
-      setSavedValue(String(updated.delivery_fee ?? '0'));
-      setEditing(false);
-      onSaved();
-    } catch (error) {
-      void message.error(errorText(error));
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  };
-  return (
-    <div className="task-inline-fee">
-      <span>运费：</span>
-      {editing ? (
-        <Input
-          autoFocus
-          size="small"
-          prefix="¥"
-          variant="borderless"
-          className="task-fee-input"
-          value={value}
-          disabled={saving}
-          aria-label={`${task.title}运费`}
-          inputMode="decimal"
-          onChange={(event) => setValue(event.target.value)}
-          onBlur={() => void save()}
-          onPressEnter={() => void save()}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              canceledRef.current = true;
-              setEditing(false);
-            }
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          className="task-fee-value"
-          disabled={!editable}
-          aria-label={`${task.title}运费，${Number(savedValue) ? savedValue + '元' : '未填写'}，点击修改`}
-          title={editable ? '点击修改运费' : '运费'}
-          onClick={() => {
-            canceledRef.current = false;
-            setValue(Number(savedValue) ? savedValue : '');
-            setEditing(true);
-          }}
-        >
-          {Number(savedValue) ? `¥${Number(savedValue).toFixed(2)}` : '\u00a0'}
-        </button>
-      )}
-    </div>
-  );
-}
 function productLabel(task: Pick<Task, 'product_summary' | 'content'>): string {
   const explicit = task.product_summary?.trim();
-  if (explicit) return explicit;
+  if (task.product_summary != null) return explicit ?? '';
   return task.content?.match(/(?:商品|产品|品名)\s*[:：]\s*([^\n；;]+)/u)?.[1]?.trim() ?? '';
+}
+function InlineTaskFrame({ title, children, footer }: ModalProps) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => ref.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }), []);
+  return (
+    <section ref={ref} className="retail-order-form">
+      <header className="retail-order-form-header">
+        <h2>{title}</h2>
+        <div>{typeof footer === 'function' ? null : footer}</div>
+      </header>
+      {children}
+    </section>
+  );
 }
 export function TaskForm({
   initial,
@@ -135,7 +68,9 @@ export function TaskForm({
   onPersisted,
   onDraft,
   requireExpectedDelivery = false,
+  inline = false,
 }: {
+  inline?: boolean;
   onPersisted?: (task: Task) => void;
   onDraft?: (task: TaskInput) => void;
   initial: Task | TaskInput;
@@ -452,9 +387,10 @@ export function TaskForm({
       });
     else onCancel();
   };
+  const EditorFrame = inline ? InlineTaskFrame : Modal;
   return (
-    <Modal
-      title={taskId ? '编辑任务' : '确认任务草稿'}
+    <EditorFrame
+      title={inline ? (taskId ? '编辑订单' : '新建订单') : taskId ? '编辑任务' : '确认任务草稿'}
       open
       width={860}
       onCancel={cancel}
@@ -755,7 +691,7 @@ export function TaskForm({
           ))}
         </div>
       </div>
-    </Modal>
+    </EditorFrame>
   );
 }
 function TaskImages({ id }: { id: string }) {
@@ -853,6 +789,138 @@ export function Tasks({
   const setLoading = (loading: boolean) => dispatch({ type: 'loading', loading });
   const [revision, setRevision] = useState(0);
   const [totalAmount, setTotalAmount] = useState(0);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const [fullScreen, setFullScreen] = useState(false);
+  const defaultWidths = [64, 100, 145, 340, 126, 150, 126, 86, 118];
+  const [layout, setLayout] = useState(() => {
+    try {
+      return z
+        .object({
+          zoom: z.number().min(60).max(150),
+          widths: z.array(z.number().min(64).max(900)).length(9),
+        })
+        .parse(JSON.parse(localStorage.getItem('retail-sheet-layout') ?? ''));
+    } catch {
+      return { zoom: 100, widths: defaultWidths };
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('retail-sheet-layout', JSON.stringify(layout));
+    } catch {
+      /* Layout preference is optional. */
+    }
+  }, [layout]);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullScreen(false);
+    };
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, []);
+  type CellField =
+    | 'title'
+    | 'product_summary'
+    | 'delivery_address'
+    | 'customer_name'
+    | 'content'
+    | 'note'
+    | 'order_amount'
+    | 'delivery_fee'
+    | 'expected_delivery_at'
+    | 'assignee_employee_id'
+    | 'order_taker_employee_id'
+    | 'priority'
+    | 'order_channel';
+  type Undo = { id: string; field: CellField; before: string | null; after: string | null };
+  const [undo, setUndo] = useState<Undo[]>([]),
+    [cellStatus, setCellStatus] = useState(''),
+    [undoBusy, setUndoBusy] = useState(false);
+  const saveCell = async (
+    task: Task,
+    field: CellField,
+    text: string,
+    previous = String(task[field] ?? ''),
+    remember = true,
+  ) => {
+    text = text.trim();
+    if (field === 'delivery_fee' && !text) text = '0';
+    const value =
+      text === '' &&
+      [
+        'order_amount',
+        'expected_delivery_at',
+        'assignee_employee_id',
+        'order_taker_employee_id',
+      ].includes(field)
+        ? null
+        : text;
+    if (field === 'title' && !text.trim()) throw new Error('订单名称不能为空');
+    if (
+      ['order_amount', 'delivery_fee'].includes(field) &&
+      value !== null &&
+      !/^\d{1,10}(\.\d{1,2})?$/.test(text)
+    )
+      throw new Error('金额须为非负数，最多两位小数');
+    setCellStatus('保存中…');
+    try {
+      const updated = await api('PATCH', `/tasks/${task.id}/cell`, taskSchema, {
+        field,
+        value,
+        previous,
+      });
+      setTasks(getState().tasks.map((item) => (item.id === updated.id ? updated : item)));
+      if (remember)
+        setUndo((items) =>
+          [
+            ...items,
+            {
+              id: task.id,
+              field,
+              before: previous,
+              after: updated[field] == null ? null : String(updated[field]),
+            },
+          ].slice(-30),
+        );
+      setCellStatus('已保存');
+      reload();
+    } catch (e) {
+      setCellStatus('保存失败，输入已保留');
+      throw e;
+    }
+  };
+  const undoCell = async () => {
+    const last = undo.at(-1);
+    if (!last || undoBusy) return;
+    setUndoBusy(true);
+    try {
+      const task = await api('GET', `/tasks/${last.id}`, taskSchema);
+      await saveCell(task, last.field, last.before ?? '', last.after ?? '', false);
+      setUndo((items) => items.slice(0, -1));
+      setCellStatus('已撤销上一次单元格修改');
+    } catch (e) {
+      void message.error(errorText(e));
+    } finally {
+      setUndoBusy(false);
+    }
+  };
+  const cell = (
+    task: Task,
+    field: CellField,
+    label: string,
+    type: 'text' | 'money' | 'datetime' | 'multiline' = 'text',
+    display?: React.ReactNode,
+  ) => (
+    <RetailInlineCell
+      value={String(task[field] ?? '')}
+      label={`${task.title}${label}`}
+      type={type}
+      display={display}
+      disabled={!canManage}
+      onSave={(value, previous) => saveCell(task, field, value, previous)}
+    />
+  );
+
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
   const [takerUpdatingId, setTakerUpdatingId] = useState<string | null>(null);
   const [recognizingId, setRecognizingId] = useState<string | null>(null);
@@ -862,6 +930,17 @@ export function Tasks({
       await api('PATCH', `/tasks/${task.id}/order-taker`, taskSchema, {
         order_taker_employee_id: employeeId,
       });
+      setTasks(
+        getState().tasks.map((item) =>
+          item.id === task.id
+            ? {
+                ...item,
+                order_taker_employee_id: employeeId,
+                order_taker_name: catalog.employees?.find((e) => e.id === employeeId)?.name,
+              }
+            : item,
+        ),
+      );
       reload();
     } catch (error) {
       void message.error(errorText(error));
@@ -961,7 +1040,7 @@ export function Tasks({
     setStatusUpdatingId(task.id);
     try {
       const updated = await api('PATCH', `/tasks/${task.id}/status`, taskSchema, { status });
-      setTasks(tasks.map((item) => (item.id === updated.id ? updated : item)));
+      setTasks(getState().tasks.map((item) => (item.id === updated.id ? updated : item)));
       reload();
       void message.success(`状态已更新为“${states[status]}”`);
     } catch (error) {
@@ -992,7 +1071,13 @@ export function Tasks({
         </Button>
       )}
 
-      <Button type="link" onClick={() => (canManage ? setEditing(task) : setDetails(task))}>
+      <Button
+        type="link"
+        onClick={() => {
+          setFullScreen(false);
+          canManage ? setEditing(task) : setDetails(task);
+        }}
+      >
         {canManage ? '编辑' : '详情'}
       </Button>
       {canManage && (
@@ -1085,6 +1170,20 @@ export function Tasks({
           )}
         </Space>
       </div>
+      {editing && (
+        <TaskForm
+          inline
+          initial={editing}
+          onCancel={() => {
+            setEditing(null);
+            reload();
+          }}
+          onSaved={() => {
+            setEditing(null);
+            reload();
+          }}
+        />
+      )}
       <Space wrap className="filters">
         <Input
           type="month"
@@ -1154,286 +1253,444 @@ export function Tasks({
         <strong>¥{totalAmount.toFixed(2)}</strong>
         <span className="secondary">按当前筛选统计，已取消订单不计金额</span>
       </div>
-      <Table<Task>
-        className="task-summary-table"
-        rowClassName={(task) => `task-row task-row-${task.status}`}
-        tableLayout="fixed"
-        sticky
-        scroll={{ x: 1140 }}
-        size="small"
-        rowKey="id"
-        loading={loading}
-        dataSource={tasks}
-        pagination={{ current: page, pageSize: 20, total, onChange: setPage }}
-        expandable={{
-          showExpandColumn: false,
-          expandedRowKeys: expandedTaskIds,
-          expandedRowRender: (task) => (
-            <div className="task-expanded-detail">
-              <div className="task-expanded-content">
-                <p>
-                  <strong>商品：</strong>
-                  {productLabel(task) || '待补充'}
-                </p>
-                {retailFlavor(task) && (
-                  <p>
-                    <strong>口味：</strong>
-                    {retailFlavor(task)}
-                  </p>
-                )}
-                <p>
-                  <strong>配送地址：</strong>
-                  {task.delivery_address || '待补充'}
-                </p>
-                <strong>订单详情</strong>
-                <p>{task.content || '暂无订单内容'}</p>
-                {!!task.note && <p className="secondary">备注：{task.note}</p>}
-              </div>
-              <div className="task-expanded-meta">
-                <span>
-                  公司：{task.company_name ?? (task.company_code === 'tri' ? '趣趣特' : '天美意')}
-                </span>
-                <span>客户：{task.customer_name || '—'}</span>
-                <span>渠道：{task.order_channel || '—'}</span>
-                <span>
-                  商品金额：
-                  {task.order_amount == null ? '待补' : `¥${Number(task.order_amount).toFixed(2)}`}
-                </span>
-                <span>配送费：¥{Number(task.delivery_fee ?? 0).toFixed(2)}</span>
-                <span>分类：{task.category_name ?? '未分类'}</span>
-                <span>负责人：{task.assignee_name || '—'}</span>
-                <span>接单人：{task.order_taker_name || '待补'}</span>
-              </div>
-              <TaskImages key={`${task.id}-${revision}`} id={task.id} />
-              <div className="task-expanded-actions">
-                {actions(task)}
-                {canManage && (
-                  <Button
-                    type="link"
-                    loading={recognizingId === task.id}
-                    disabled={!!recognizingId}
-                    onClick={() => void recognizeDetails(task)}
-                  >
-                    AI 补全商品与地址
-                  </Button>
-                )}
-              </div>
-            </div>
-          ),
-        }}
-        columns={[
-          {
-            title: '序号',
-            width: 58,
-            align: 'center',
-            render: (_value, _task, index) => (page - 1) * 20 + index + 1,
-          },
-          {
-            title: '状态',
-            dataIndex: 'status',
-            width: 92,
-            render: (value: Task['status'], task) => (
-              <Select
-                className={`task-status-select task-status-${value} task-entry-${task.entry_progress === 'entered' ? 'entered' : 'not-entered'}`}
-                variant="borderless"
-                size="small"
-                suffixIcon={null}
-                popupMatchSelectWidth={128}
-                classNames={{ popup: { root: 'task-status-popup' } }}
-                aria-label={`${task.title}状态，点击修改`}
-                value={value}
-                disabled={statusUpdatingId === task.id}
-                loading={statusUpdatingId === task.id}
-                onClick={(event) => event.stopPropagation()}
-                onChange={(next) => void setTaskStatus(task, next)}
-                options={(canManage
-                  ? (Object.keys(states) as Task['status'][])
-                  : nextStates(value)
-                ).map((status) => ({
-                  value: status,
-                  label: (
-                    <span className={`task-status-text task-status-${status}`}>
-                      <i />
-                      {states[status]}
-                    </span>
-                  ),
-                }))}
-              />
-            ),
-          },
-          {
-            title: '时间',
-            dataIndex: 'expected_delivery_at',
-            width: 132,
-            render: (value: string | null) =>
-              value ? (
-                <span className="task-delivery-time">
-                  <span>{value.slice(5, 10)}</span>
-                  <span>{value.slice(11, 16)}</span>
-                </span>
-              ) : (
-                '待补充'
-              ),
-          },
-          {
-            title: '订单',
-            dataIndex: 'title',
-            render: (_, task) => (
-              <button
-                type="button"
-                className="task-order-toggle task-one-line"
-                title={`${task.title} ${task.product_summary ?? ''} ${task.content ?? ''}`}
-                aria-label={`${expandedTaskIds.includes(task.id) ? '收起' : '展开'}${task.title}订单详情`}
-                aria-expanded={expandedTaskIds.includes(task.id)}
-                onClick={() => toggleTaskExpanded(task.id)}
-              >
-                <span
-                  className={`task-expand-arrow${expandedTaskIds.includes(task.id) ? ' is-expanded' : ''}`}
-                  aria-hidden="true"
-                >
-                  <RightOutlined />
-                </span>
-                <strong>{task.title}</strong>
-                <span>{productLabel(task) || '商品待补'}</span>
-                {!!task.order_channel && <span>{task.order_channel}</span>}
-              </button>
-            ),
-          },
-          {
-            title: (
-              <RetailColumnFilter
-                field="order_taker_employee_id"
-                title="接单人"
-                rules={columnRules}
-                choices={options(catalog.employees ?? [])}
-                onApply={applyColumnRules}
-              />
-            ),
-            width: 126,
-            render: (_, task) =>
-              canManage ? (
-                <Select
-                  aria-label={`${task.title}接单人`}
-                  variant="borderless"
-                  size="small"
-                  style={{ width: '100%' }}
-                  placeholder="选择接单人"
-                  value={task.order_taker_employee_id || undefined}
-                  loading={takerUpdatingId === task.id}
-                  disabled={takerUpdatingId === task.id}
-                  showSearch
-                  optionFilterProp="label"
-                  options={options(
-                    (catalog.employees ?? []).filter(
-                      (employee) =>
-                        employee.id === task.order_taker_employee_id ||
-                        employeeAvailableOn(
-                          employee,
-                          (
-                            task.expected_delivery_at ||
-                            task.created_at ||
-                            new Date().toLocaleDateString('sv-SE')
-                          ).slice(0, 10),
-                        ),
+      <div ref={sheetRef} className={`retail-sheet${fullScreen ? ' is-fullscreen' : ''}`}>
+        <div className="retail-sheet-toolbar">
+          <span>直接点击文字或金额修改 · Tab 下一格 · Enter 保存 · Esc 取消</span>
+          <span role="status">{cellStatus}</span>
+          <Button
+            size="small"
+            disabled={!undo.length || undoBusy}
+            loading={undoBusy}
+            onClick={() => void undoCell()}
+          >
+            撤销修改
+          </Button>
+          <Button
+            size="small"
+            aria-label="缩小表格"
+            onClick={() => setLayout((v) => ({ ...v, zoom: Math.max(60, v.zoom - 10) }))}
+          >
+            −
+          </Button>
+          <span aria-label="表格缩放比例">{layout.zoom}%</span>
+          <Button
+            size="small"
+            aria-label="放大表格"
+            onClick={() => setLayout((v) => ({ ...v, zoom: Math.min(150, v.zoom + 10) }))}
+          >
+            ＋
+          </Button>
+          <Button
+            size="small"
+            onClick={() =>
+              setLayout((v) => ({
+                ...v,
+                zoom: Math.max(
+                  60,
+                  Math.min(
+                    150,
+                    Math.floor(
+                      ((sheetRef.current?.clientWidth ?? 1200) /
+                        v.widths.reduce((a, b) => a + b, 0)) *
+                        100,
                     ),
-                  )}
-                  onChange={(value) => void setOrderTaker(task, value)}
-                />
-              ) : (
-                task.order_taker_name || '接单人待补'
+                  ),
+                ),
+              }))
+            }
+          >
+            适应宽度
+          </Button>
+          <Button size="small" onClick={() => setLayout({ zoom: 100, widths: defaultWidths })}>
+            重置布局
+          </Button>
+          <Button size="small" onClick={() => setFullScreen((v) => !v)}>
+            {fullScreen ? '退出全屏' : '全屏编辑'}
+          </Button>
+        </div>
+        <div style={{ zoom: layout.zoom / 100 }}>
+          <Table<Task>
+            className="task-summary-table"
+            rowClassName={(task) => `task-row task-row-${task.status}`}
+            tableLayout="fixed"
+            components={retailTableComponents}
+            scroll={{ x: layout.widths.reduce((a, b) => a + b, 0) }}
+            size="small"
+            rowKey="id"
+            loading={loading && tasks.length === 0}
+            dataSource={tasks}
+            pagination={{ current: page, pageSize: 20, total, onChange: setPage }}
+            expandable={{
+              showExpandColumn: false,
+              expandedRowKeys: expandedTaskIds,
+              expandedRowRender: (task) => (
+                <div className="task-expanded-detail">
+                  <div className="task-expanded-content">
+                    <div>
+                      <strong>商品：</strong>
+                      {cell(task, 'product_summary', '商品', 'multiline')}
+                    </div>
+                    {retailFlavor(task) && (
+                      <p>
+                        <strong>口味：</strong>
+                        {retailFlavor(task)}
+                      </p>
+                    )}
+                    <div>
+                      <strong>配送地址：</strong>
+                      {cell(task, 'delivery_address', '配送地址', 'multiline')}
+                    </div>
+                    <strong>订单详情</strong>
+                    {cell(task, 'content', '订单详情', 'multiline')}
+                    <div className="retail-order-note">
+                      <strong>备注：</strong>
+                      {cell(task, 'note', '备注', 'multiline')}
+                    </div>
+                  </div>
+                  <div className="task-expanded-meta">
+                    <span>
+                      公司：
+                      {task.company_name ?? (task.company_code === 'tri' ? '趣趣特' : '天美意')}
+                    </span>
+                    <span>客户：{task.customer_name || '—'}</span>
+                    <span>渠道：{task.order_channel || '—'}</span>
+                    <span>
+                      商品金额：
+                      {task.order_amount == null
+                        ? '待补'
+                        : `¥${Number(task.order_amount).toFixed(2)}`}
+                    </span>
+                    <span>配送费：¥{Number(task.delivery_fee ?? 0).toFixed(2)}</span>
+                    <span>分类：{task.category_name ?? '未分类'}</span>
+                    <span>负责人：{task.assignee_name || '—'}</span>
+                    <span>接单人：{task.order_taker_name || '待补'}</span>
+                  </div>
+                  <TaskImages key={task.id} id={task.id} />
+                  <div className="task-expanded-actions">
+                    {actions(task)}
+                    {canManage && (
+                      <Button
+                        type="link"
+                        loading={recognizingId === task.id}
+                        disabled={!!recognizingId}
+                        onClick={() => void recognizeDetails(task)}
+                      >
+                        AI 补全商品与地址
+                      </Button>
+                    )}
+                  </div>
+                </div>
               ),
-          },
-          {
-            title: (
-              <RetailColumnFilter
-                field="order_amount"
-                title="金额"
-                rules={columnRules}
-                onApply={applyColumnRules}
-              />
-            ),
-            dataIndex: 'order_amount',
-            width: 150,
-            render: (value: string | number | null, task) => (
-              <div className="task-amount-cell">
-                <button
-                  type="button"
-                  className="task-amount-toggle"
-                  aria-label={`${expandedFeeIds.includes(task.id) ? '收起' : '展开'}运费`}
-                  aria-expanded={expandedFeeIds.includes(task.id)}
-                  onClick={() =>
-                    setExpandedFeeIds((ids) =>
-                      ids.includes(task.id)
-                        ? ids.filter((id) => id !== task.id)
-                        : [...ids, task.id],
-                    )
-                  }
-                >
-                  <span>{value == null ? '待补' : `¥${Number(value).toFixed(2)}`}</span>
-                  <RightOutlined
-                    className={`task-expand-arrow${expandedFeeIds.includes(task.id) ? ' is-expanded' : ''}`}
-                  />
-                </button>
-                {expandedFeeIds.includes(task.id) && (
-                  <InlineDeliveryFee task={task} editable={canManage} onSaved={reload} />
-                )}
-              </div>
-            ),
-          },
-          {
-            title: (
-              <RetailColumnFilter
-                field="assignee_employee_id"
-                title="负责人"
-                rules={columnRules}
-                choices={options(catalog.employees ?? [])}
-                onApply={applyColumnRules}
-              />
-            ),
-            dataIndex: 'assignee_name',
-            width: 92,
-            render: (value) => value || '—',
-          },
-          {
-            title: '优先级',
-            dataIndex: 'priority',
-            width: 72,
-            render: (value) =>
-              ({ low: '低', normal: '普通', high: '高', urgent: '加急' })[String(value) as 'low'],
-          },
-          {
-            title: (
-              <RetailColumnFilter
-                field="entry_progress"
-                title="金蝶录入"
-                rules={columnRules}
-                onApply={applyColumnRules}
-              />
-            ),
-            dataIndex: 'entry_progress',
-            width: 118,
-            render: (value: Task['entry_progress'], task) =>
-              canManage ? (
-                <Select
-                  className="task-progress-select"
-                  variant="borderless"
-                  size="small"
-                  value={value}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(next) => void setEntryProgress(task, next)}
-                  options={[
-                    { value: 'not_entered', label: '未录入' },
-                    { value: 'entered', label: '已录入' },
-                  ]}
-                />
-              ) : value === 'entered' ? (
-                '已录入'
-              ) : (
-                '未录入'
-              ),
-          },
-        ]}
-      />
+            }}
+            columns={(
+              [
+                {
+                  title: '序号',
+                  width: 58,
+                  align: 'center',
+                  render: (_value, _task, index) => (page - 1) * 20 + index + 1,
+                },
+                {
+                  title: '状态',
+                  dataIndex: 'status',
+                  width: 92,
+                  render: (value: Task['status'], task) => (
+                    <Select
+                      className={`task-status-select task-status-${value} task-entry-${task.entry_progress === 'entered' ? 'entered' : 'not-entered'}`}
+                      variant="borderless"
+                      size="small"
+                      suffixIcon={null}
+                      popupMatchSelectWidth={128}
+                      classNames={{ popup: { root: 'task-status-popup' } }}
+                      aria-label={`${task.title}状态，点击修改`}
+                      value={value}
+                      disabled={statusUpdatingId === task.id}
+                      loading={statusUpdatingId === task.id}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(next) => void setTaskStatus(task, next)}
+                      options={(canManage
+                        ? (Object.keys(states) as Task['status'][])
+                        : nextStates(value)
+                      ).map((status) => ({
+                        value: status,
+                        label: (
+                          <span className={`task-status-text task-status-${status}`}>
+                            <i />
+                            {states[status]}
+                          </span>
+                        ),
+                      }))}
+                    />
+                  ),
+                },
+                {
+                  title: '时间',
+                  dataIndex: 'expected_delivery_at',
+                  width: 132,
+                  render: (value: string | null, task) =>
+                    cell(
+                      task,
+                      'expected_delivery_at',
+                      '交付时间',
+                      'datetime',
+                      value ? (
+                        <span className="task-delivery-time">
+                          <span>{value.slice(5, 10)}</span>
+                          <span>{value.slice(11, 16)}</span>
+                        </span>
+                      ) : (
+                        '待补充'
+                      ),
+                    ),
+                },
+                {
+                  title: '订单',
+                  dataIndex: 'title',
+                  render: (_, task) => (
+                    <div className="retail-order-title">
+                      <button
+                        type="button"
+                        className="task-order-toggle"
+                        aria-label={`${expandedTaskIds.includes(task.id) ? '收起' : '展开'}${task.title}订单详情`}
+                        aria-expanded={expandedTaskIds.includes(task.id)}
+                        onClick={() => toggleTaskExpanded(task.id)}
+                      >
+                        <RightOutlined
+                          className={`task-expand-arrow${expandedTaskIds.includes(task.id) ? ' is-expanded' : ''}`}
+                        />
+                      </button>
+                      {cell(task, 'title', '订单名称')}
+                      {!!task.order_channel && (
+                        <span className="secondary">{task.order_channel}</span>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  title: (
+                    <RetailColumnFilter
+                      field="order_taker_employee_id"
+                      title="接单人"
+                      rules={columnRules}
+                      choices={options(catalog.employees ?? [])}
+                      onApply={applyColumnRules}
+                    />
+                  ),
+                  width: 126,
+                  render: (_, task) =>
+                    canManage ? (
+                      <Select
+                        aria-label={`${task.title}接单人`}
+                        variant="borderless"
+                        size="small"
+                        style={{ width: '100%' }}
+                        placeholder="选择接单人"
+                        value={task.order_taker_employee_id || undefined}
+                        loading={takerUpdatingId === task.id}
+                        disabled={takerUpdatingId === task.id}
+                        showSearch
+                        optionFilterProp="label"
+                        options={options(
+                          (catalog.employees ?? []).filter(
+                            (employee) =>
+                              employee.id === task.order_taker_employee_id ||
+                              employeeAvailableOn(
+                                employee,
+                                (
+                                  task.expected_delivery_at ||
+                                  task.created_at ||
+                                  new Date().toLocaleDateString('sv-SE')
+                                ).slice(0, 10),
+                              ),
+                          ),
+                        )}
+                        onChange={(value) => void setOrderTaker(task, value)}
+                      />
+                    ) : (
+                      task.order_taker_name || '接单人待补'
+                    ),
+                },
+                {
+                  title: (
+                    <RetailColumnFilter
+                      field="order_amount"
+                      title="金额"
+                      rules={columnRules}
+                      onApply={applyColumnRules}
+                    />
+                  ),
+                  dataIndex: 'order_amount',
+                  width: 150,
+                  render: (value: string | number | null, task) => (
+                    <div className="task-amount-cell">
+                      {cell(
+                        task,
+                        'order_amount',
+                        '订单金额',
+                        'money',
+                        value == null ? '待补' : `¥${Number(value).toFixed(2)}`,
+                      )}
+                      <button
+                        type="button"
+                        className="task-amount-toggle"
+                        aria-label={`${expandedFeeIds.includes(task.id) ? '收起' : '展开'}运费`}
+                        aria-expanded={expandedFeeIds.includes(task.id)}
+                        onClick={() =>
+                          setExpandedFeeIds((ids) =>
+                            ids.includes(task.id)
+                              ? ids.filter((id) => id !== task.id)
+                              : [...ids, task.id],
+                          )
+                        }
+                      >
+                        <RightOutlined
+                          className={`task-expand-arrow${expandedFeeIds.includes(task.id) ? ' is-expanded' : ''}`}
+                        />
+                      </button>
+                      {expandedFeeIds.includes(task.id) && (
+                        <div className="task-inline-fee">
+                          <span>运费：</span>
+                          {cell(
+                            task,
+                            'delivery_fee',
+                            '运费',
+                            'money',
+                            Number(task.delivery_fee)
+                              ? `¥${Number(task.delivery_fee).toFixed(2)}`
+                              : '\u00a0',
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ),
+                },
+                {
+                  title: (
+                    <RetailColumnFilter
+                      field="assignee_employee_id"
+                      title="负责人"
+                      rules={columnRules}
+                      choices={options(catalog.employees ?? [])}
+                      onApply={applyColumnRules}
+                    />
+                  ),
+                  dataIndex: 'assignee_name',
+                  width: 92,
+                  render: (value, task) =>
+                    canManage ? (
+                      <select
+                        data-retail-cell
+                        className="retail-plain-select"
+                        aria-label={`${task.title}负责人`}
+                        value={task.assignee_employee_id ?? ''}
+                        onChange={(e) =>
+                          void saveCell(task, 'assignee_employee_id', e.target.value).catch((e) =>
+                            message.error(errorText(e)),
+                          )
+                        }
+                      >
+                        <option value="">未分配</option>
+                        {(catalog.employees ?? [])
+                          .filter(
+                            (employee) =>
+                              employee.id === task.assignee_employee_id ||
+                              employeeAvailableOn(
+                                employee,
+                                (
+                                  task.expected_delivery_at ||
+                                  task.created_at ||
+                                  new Date().toLocaleDateString('sv-SE')
+                                ).slice(0, 10),
+                              ),
+                          )
+                          .map((employee) => (
+                            <option key={employee.id} value={employee.id}>
+                              {employee.name}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      value || '—'
+                    ),
+                },
+                {
+                  title: '优先级',
+                  dataIndex: 'priority',
+                  width: 72,
+                  render: (value, task) => (
+                    <select
+                      data-retail-cell
+                      className="retail-plain-select"
+                      aria-label={`${task.title}优先级`}
+                      disabled={!canManage}
+                      value={value}
+                      onChange={(e) =>
+                        void saveCell(task, 'priority', e.target.value).catch((e) =>
+                          message.error(errorText(e)),
+                        )
+                      }
+                    >
+                      {Object.entries({
+                        low: '低',
+                        normal: '普通',
+                        high: '高',
+                        urgent: '加急',
+                      }).map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  ),
+                },
+                {
+                  title: (
+                    <RetailColumnFilter
+                      field="entry_progress"
+                      title="金蝶录入"
+                      rules={columnRules}
+                      onApply={applyColumnRules}
+                    />
+                  ),
+                  dataIndex: 'entry_progress',
+                  width: 118,
+                  render: (value: Task['entry_progress'], task) =>
+                    canManage ? (
+                      <Select
+                        className="task-progress-select"
+                        variant="borderless"
+                        size="small"
+                        value={value}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(next) => void setEntryProgress(task, next)}
+                        options={[
+                          { value: 'not_entered', label: '未录入' },
+                          { value: 'entered', label: '已录入' },
+                        ]}
+                      />
+                    ) : value === 'entered' ? (
+                      '已录入'
+                    ) : (
+                      '未录入'
+                    ),
+                },
+              ] satisfies TableColumnsType<Task>
+            ).map((column, index) => ({
+              ...column,
+              key: String(index),
+              width: layout.widths[index],
+              onHeaderCell: () => ({
+                width: layout.widths[index],
+                onResizeWidth: (width: number) =>
+                  setLayout((v) => ({
+                    ...v,
+                    widths: v.widths.map((old, i) => (i === index ? width : old)),
+                  })),
+              }),
+            }))}
+          />
+        </div>
+      </div>
 
       {details && (
         <Modal open title="任务详情" footer={null} onCancel={() => setDetails(null)}>
@@ -1459,19 +1716,6 @@ export function Tasks({
           <p>备注：{details.note}</p>
           <TaskImages id={details.id} />
         </Modal>
-      )}
-      {editing && (
-        <TaskForm
-          initial={editing}
-          onCancel={() => {
-            setEditing(null);
-            reload();
-          }}
-          onSaved={() => {
-            setEditing(null);
-            reload();
-          }}
-        />
       )}
     </>
   );
